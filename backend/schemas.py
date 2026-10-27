@@ -32,6 +32,25 @@ def mask_telegram_id(chat_id: str | None) -> str | None:
     return f"***{compact[-3:]}"
 
 
+def mask_name(name: str) -> str:
+    """Privacy mask for the public Alerts view -- keeps roughly the first
+    half of each word, replaces the rest with X, preserving word count and
+    length (e.g. "KAUNG HTET" -> "KAUXX HTXX"). The underlying embassy list
+    entry is public info either way; this masks the fact that THIS
+    specific person is a user of our notification service."""
+    if not name:
+        return name
+    words = name.upper().split()
+    masked = []
+    for w in words:
+        if len(w) <= 2:
+            masked.append(w)
+            continue
+        keep = -(-len(w) // 2)  # ceil(len/2)
+        masked.append(w[:keep] + "X" * (len(w) - keep))
+    return " ".join(masked)
+
+
 class WatchlistIn(BaseModel):
     full_name: str
     passport_no: str | None = None
@@ -134,3 +153,19 @@ class MatchOut(BaseModel):
     matched_on: str
     score: int
     created_at: datetime
+
+
+class PublicMatchOut(BaseModel):
+    """Alerts view for anonymous visitors: both names masked (the person is
+    one of our users, not just someone on the embassy's public list), the
+    passport already masked, and no internal matching details."""
+    watchlist_name_masked: str
+    entry_name_masked: str
+    passport_no: str | None
+    approved_date: str | None
+    source: str
+    created_at: datetime
+
+
+class PublicStats(BaseModel):
+    total_users: int

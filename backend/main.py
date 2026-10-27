@@ -13,8 +13,8 @@ from checker.notify import send_message
 
 from .auth import get_db, require_session
 from .schemas import (
-    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicStatusOut, SnapshotOut, WatchlistIn,
-    WatchlistOut, WatchlistUpdate, mask_passport, mask_telegram_id,
+    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut, PublicStats, PublicStatusOut,
+    SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, mask_name, mask_passport, mask_telegram_id,
 )
 from .webauthn_routes import router as webauthn_router
 
@@ -69,6 +69,31 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     # intentionally public, no session required -- this is the self-service
     # signup anyone with the link can use to add themselves and get
     # notified; only VIEWING/managing the list requires the admin login
+
+    # re-submitting the same details (e.g. revisiting the site) retrieves
+    # the existing registration instead of creating a duplicate -- matches
+    # on telegram id or passport number, whichever was provided
+    existing = None
+    if payload.telegram_chat_id:
+        existing = session.query(models.Watchlist).filter_by(telegram_chat_id=payload.telegram_chat_id).first()
+    if existing is None and payload.passport_no:
+        existing = session.query(models.Watchlist).filter_by(passport_no=payload.passport_no).first()
+
+    if existing is not None:
+        if not existing.lookup_token:
+            existing.lookup_token = secrets.token_urlsafe(16)
+            session.commit()
+        if existing.telegram_chat_id:
+            try:
+                send_message(
+                    f"👋 Welcome back, {existing.full_name} — you're already registered.\n\n"
+                    f"Check your status anytime: {_status_url(existing.lookup_token)}",
+                    chat_id=existing.telegram_chat_id,
+                )
+            except Exception:
+                log.exception("Failed to send welcome-back message to Telegram")
+        return _to_watchlist_out(existing)
+
     token = secrets.token_urlsafe(16)
     entry = models.Watchlist(
         full_name=payload.full_name, passport_no=payload.passport_no,
@@ -81,9 +106,10 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     if payload.telegram_chat_id:
         try:
             send_message(
-                f"✅ You're registered with the MMR Passport Renewal Monitor, {payload.full_name}.\n\n"
-                f"We'll message you here the moment your name and passport number appear on the embassy's "
-                f"lists. Check your status anytime: {_status_url(token)}",
+                f"👋 Hi {payload.full_name}, you're now registered with the MMR Passport Renewal Monitor.\n\n"
+                f"You are not on the embassy's list yet. The moment your name and passport number appear on "
+                f"either the approval list or a renewal appointment post, we'll notify you right here in this "
+                f"chat.\n\nCheck your status anytime: {_status_url(token)}",
                 chat_id=payload.telegram_chat_id,
             )
         except Exception:
@@ -92,6 +118,34 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
             log.exception("Failed to send signup confirmation to Telegram")
 
     return _to_watchlist_out(entry)
+
+
+@app.get("/api/public/stats", response_model=PublicStats)
+def public_stats(session: Session = Depends(get_db)):
+    total = session.query(models.Watchlist).count()
+    return PublicStats(total_users=total)
+
+
+@app.get("/api/public/matches", response_model=list[PublicMatchOut])
+def public_matches(session: Session = Depends(get_db)):
+    """Same data as /api/matches, but for anonymous visitors: both names
+    masked, no internal matching-score details."""
+    rows = session.query(models.MatchRecord).order_by(models.MatchRecord.created_at.desc()).all()
+    out = []
+    for m in rows:
+        entry = session.get(models.Entry, m.entry_id)
+        watch = session.get(models.Watchlist, m.watchlist_id)
+        if entry is None:
+            continue
+        out.append(PublicMatchOut(
+            watchlist_name_masked=mask_name(watch.full_name) if watch else "(removed)",
+            entry_name_masked=mask_name(entry.name),
+            passport_no=mask_passport(entry.passport_no),
+            approved_date=entry.approved_date,
+            source=m.source,
+            created_at=m.created_at,
+        ))
+    return out
 
 
 @app.get("/api/watchlist/status/{token}", response_model=PublicStatusOut)
@@ -173,7 +227,7 @@ def dismiss_match(match_id: int, session: Session = Depends(get_db)):
     session.commit()
 
 
-@app.get("/api/snapshots", response_model=list[SnapshotOut], dependencies=[Depends(require_session)])
+@app.get("/api/snapshots", response_model=list[SnapshotOut])
 def list_snapshots(session: Session = Depends(get_db)):
     return session.query(models.Snapshot).order_by(models.Snapshot.fetched_at.desc()).all()
 
@@ -183,7 +237,7 @@ def list_extraction_issues(session: Session = Depends(get_db)):
     return session.query(models.ExtractionIssue).order_by(models.ExtractionIssue.id.desc()).all()
 
 
-@app.get("/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut], dependencies=[Depends(require_session)])
+@app.get("/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut])
 def snapshot_entries(snapshot_id: int, q: str = Query(default=""), session: Session = Depends(get_db)):
     query = session.query(models.Entry).filter_by(snapshot_id=snapshot_id)
     if q:
@@ -192,7 +246,7 @@ def snapshot_entries(snapshot_id: int, q: str = Query(default=""), session: Sess
     return query.order_by(models.Entry.page_no, models.Entry.id).all()
 
 
-@app.get("/api/entries/search", response_model=list[EntrySearchResult], dependencies=[Depends(require_session)])
+@app.get("/api/entries/search", response_model=list[EntrySearchResult])
 def search_entries(q: str = Query(min_length=2), limit: int = Query(default=200, le=500), session: Session = Depends(get_db)):
     """Searches every entry ever recorded, across all snapshots/sources."""
     like = f"%{q.upper()}%"

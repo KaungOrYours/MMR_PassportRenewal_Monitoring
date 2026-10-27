@@ -43,15 +43,7 @@ export default function SignupView() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-12">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold">MMR Passport Renewal Monitor</h1>
-        <p className="text-sm text-neutral-500">
-          Get notified on Telegram the moment your name appears on the Myanmar Embassy Singapore's passport
-          approval or renewal appointment lists.
-        </p>
-      </header>
-
+    <div className="mx-auto max-w-md">
       {done ? (
         <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 p-4 space-y-3">
           <p className="font-medium text-green-800 dark:text-green-200">You're on the list.</p>

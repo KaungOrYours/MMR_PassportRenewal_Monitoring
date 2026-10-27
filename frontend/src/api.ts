@@ -72,6 +72,19 @@ export interface Device {
   created_at: string
 }
 
+export interface PublicMatch {
+  watchlist_name_masked: string
+  entry_name_masked: string
+  passport_no: string | null
+  approved_date: string | null
+  source: string
+  created_at: string
+}
+
+export interface PublicStats {
+  total_users: number
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getSessionToken()
   const res = await fetch(`${API_BASE}${path}`, {
@@ -103,6 +116,8 @@ export const api = {
   statusByToken: (token: string) => request<PublicStatus>(`/api/watchlist/status/${token}`),
   listMatches: () => request<MatchRecord[]>('/api/matches'),
   dismissMatch: (id: number) => request<void>(`/api/matches/${id}`, { method: 'DELETE' }),
+  publicMatches: () => request<PublicMatch[]>('/api/public/matches'),
+  publicStats: () => request<PublicStats>('/api/public/stats'),
   listSnapshots: () => request<Snapshot[]>('/api/snapshots'),
   snapshotEntries: (id: number, q = '') =>
     request<Entry[]>(`/api/snapshots/${id}/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
