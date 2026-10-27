@@ -189,8 +189,13 @@ def run_telegram_renewal_check(session) -> None:
                     parsed = retry_parsed
 
             if parsed.has_gap:
-                detail = f"expected {parsed.index_marker_count} rows, recovered {parsed.row_count}"
-                issues.append({"page_no": i, "kind": "row_count_mismatch", "detail": detail})
+                if parsed.row_count == 0 and parsed.index_marker_count == 0:
+                    kind = "zero_rows_extracted"
+                    detail = "0 rows and 0 index markers detected -- likely total OCR failure, not an empty page"
+                else:
+                    kind = "row_count_mismatch"
+                    detail = f"expected {parsed.index_marker_count} rows, recovered {parsed.row_count}"
+                issues.append({"page_no": i, "kind": kind, "detail": detail})
                 log.error("[telegram_renewal] Unresolved integrity gap on post %d image %d: %s", post.post_id, i, detail)
 
             all_rows.extend(parsed.rows)

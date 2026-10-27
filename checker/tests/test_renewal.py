@@ -47,6 +47,16 @@ def test_integrity_gap_detected_when_a_row_is_unreadable():
     assert result.has_gap  # 4 index markers (61-64) but only 3 rows recovered
 
 
+def test_integrity_gap_detected_on_total_ocr_failure():
+    # a page OCR fails to read entirely -- no index markers, no rows. This
+    # must still flag has_gap (not look identical to a genuinely empty
+    # page), since every real table page has multiple rows.
+    result = parse_renewal_page(1, "garbled unreadable noise\nwith no table structure at all")
+    assert result.row_count == 0
+    assert result.index_marker_count == 0
+    assert result.has_gap
+
+
 def test_masked_passport_matches_known_visible_digits():
     assert masked_passport_matches("MG771548", "MG77**48")
     assert not masked_passport_matches("MG991548", "MG77**48")  # prefix mismatch

@@ -39,7 +39,13 @@ class RenewalPageParseResult:
 
     @property
     def has_gap(self) -> bool:
-        return self.row_count < self.index_marker_count
+        # row_count < index_marker_count catches a partial miss (some rows
+        # unreadable). row_count == 0 additionally catches a *total* OCR
+        # failure, where index_marker_count comes back 0 too -- otherwise
+        # 0 < 0 is False and a fully unreadable page (every genuine table
+        # page has multiple rows) is silently indistinguishable from an
+        # intentionally empty one, with no retry and no logged issue.
+        return self.row_count < self.index_marker_count or self.row_count == 0
 
 
 def normalize_text(text: str) -> str:
