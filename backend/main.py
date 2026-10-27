@@ -17,13 +17,13 @@ from .webauthn_routes import router as webauthn_router
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
 
-# credentialed cross-origin cookies require an explicit origin list --
-# CORS forbids combining a wildcard origin with allow_credentials
+# explicit origin (not "*") so a browser can't be tricked into sending the
+# bearer token from an unexpected page; sessions are a header, not a
+# cookie, so allow_credentials is not needed
 origins = [o.strip() for o in os.environ.get("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

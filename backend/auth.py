@@ -2,19 +2,26 @@
 
 There is no username/password and no standing API key for the web GUI --
 a registered device's Face ID/Touch ID key pair IS the credential. See
-webauthn_routes.py for the registration/login ceremonies; this module is
-just the session cookie issuance/verification every other route depends on.
+webauthn_routes.py for the registration/login ceremonies.
+
+Sessions are a bearer token (Authorization: Bearer <token>), not a cookie:
+the frontend (vercel.app) and backend (onrender.com) are different
+registrable domains, and Safari's Intelligent Tracking Prevention silently
+drops cross-site cookies even with SameSite=None; Secure set correctly --
+confirmed live (the dashboard rendered as "logged in" immediately after
+registration, then every subsequent request 401'd because the cookie never
+actually made it into Safari's cookie jar). A bearer token sent explicitly
+by the frontend's JS sidesteps third-party-cookie blocking entirely.
 """
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Cookie, Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from checker import db as models
 
-SESSION_COOKIE = "admin_session"
 SESSION_TTL_DAYS = 30
 
 
@@ -56,12 +63,25 @@ def create_session(db: Session) -> tuple[str, datetime]:
     return token, expires_at
 
 
+def _extract_bearer(authorization: str | None) -> str | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    return authorization[len("Bearer "):].strip() or None
+
+
+def get_session_row(authorization: str | None, db: Session) -> models.AdminSession | None:
+    token = _extract_bearer(authorization)
+    if not token:
+        return None
+    row = db.get(models.AdminSession, token)
+    if row is None or not not_expired(row.expires_at):
+        return None
+    return row
+
+
 def require_session(
-    admin_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> None:
-    if not admin_session:
+    if get_session_row(authorization, db) is None:
         raise HTTPException(401, "Not logged in")
-    row = db.get(models.AdminSession, admin_session)
-    if row is None or not not_expired(row.expires_at):
-        raise HTTPException(401, "Session expired or invalid")

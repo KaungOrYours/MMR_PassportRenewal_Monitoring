@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import { api } from '../api'
+import { setSessionToken } from './session'
 
 type Phase = 'checking' | 'bootstrap' | 'login' | 'authed' | 'error'
 
@@ -32,7 +33,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       const { options, challenge_token } = await api.registerBegin(label, opts)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const credential = await startRegistration({ optionsJSON: options as any })
-      await api.registerComplete(credential, challenge_token, label)
+      const { session_token } = await api.registerComplete(credential, challenge_token, label)
+      setSessionToken(session_token)
       setPhase('authed')
     } catch (e) {
       setError(String(e))
@@ -48,7 +50,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       const { options, challenge_token } = await api.loginBegin()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const credential = await startAuthentication({ optionsJSON: options as any })
-      await api.loginComplete(credential, challenge_token)
+      const { session_token } = await api.loginComplete(credential, challenge_token)
+      setSessionToken(session_token)
       setPhase('authed')
     } catch (e) {
       setError(String(e))

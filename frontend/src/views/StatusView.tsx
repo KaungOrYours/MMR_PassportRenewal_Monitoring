@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type Device, type Snapshot } from '../api'
+import { clearSessionToken } from '../auth/session'
 
 const SOURCE_LABELS: Record<string, string> = {
   embassy_pdf: 'Website PDF (Lost & Seaman/Offshore)',
@@ -54,6 +55,7 @@ export default function StatusView() {
 
   const logout = async () => {
     await api.logout()
+    clearSessionToken()
     window.location.reload()
   }
 

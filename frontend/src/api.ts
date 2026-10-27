@@ -1,3 +1,5 @@
+import { getSessionToken } from './auth/session'
+
 const API_BASE = import.meta.env.VITE_API_BASE as string
 
 export interface Watchlist {
@@ -60,11 +62,12 @@ export interface Device {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getSessionToken()
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   })
@@ -102,13 +105,13 @@ export const api = {
       body: JSON.stringify({ device_label: deviceLabel, enrollment_code: opts.enrollmentCode }),
     }),
   registerComplete: (credential: unknown, challengeToken: string, deviceLabel: string) =>
-    request<{ status: string }>('/api/auth/register/complete', {
+    request<{ status: string; session_token: string }>('/api/auth/register/complete', {
       method: 'POST',
       body: JSON.stringify({ credential, challenge_token: challengeToken, device_label: deviceLabel }),
     }),
   loginBegin: () => request<{ options: unknown; challenge_token: string }>('/api/auth/login/begin', { method: 'POST' }),
   loginComplete: (credential: unknown, challengeToken: string) =>
-    request<{ status: string }>('/api/auth/login/complete', {
+    request<{ status: string; session_token: string }>('/api/auth/login/complete', {
       method: 'POST',
       body: JSON.stringify({ credential, challenge_token: challengeToken }),
     }),

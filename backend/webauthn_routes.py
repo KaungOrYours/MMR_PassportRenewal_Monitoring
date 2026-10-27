@@ -10,13 +10,15 @@ to it. Device enrollment:
   already logged in on this device) or a short-lived one-time enrollment
   code generated from an already-logged-in device (POST /enrollment-code)
   -- so API_SECRET is never used again once the first device exists.
+
+Sessions are a bearer token, not a cookie -- see auth.py for why.
 """
 import json
 import os
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from webauthn import (
@@ -31,7 +33,7 @@ from webauthn.helpers.structs import (
 
 from checker import db as models
 
-from .auth import SESSION_COOKIE, SESSION_TTL_DAYS, create_session, get_db, not_expired, require_session, utcnow
+from .auth import create_session, get_db, get_session_row, not_expired, require_session, utcnow
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -47,21 +49,10 @@ def _require_webauthn_config() -> None:
         raise HTTPException(500, "WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN not configured on the server")
 
 
-def _set_session_cookie(response: Response, db: Session) -> None:
-    token, _expires_at = create_session(db)
-    response.set_cookie(
-        SESSION_COOKIE, token, httponly=True, secure=True, samesite="none",
-        max_age=SESSION_TTL_DAYS * 86400, path="/",
-    )
-
-
 @router.get("/status")
-def status(admin_session: str | None = Cookie(default=None), db: Session = Depends(get_db)):
+def status(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     has_credentials = db.query(models.WebAuthnCredential).count() > 0
-    logged_in = False
-    if admin_session:
-        row = db.get(models.AdminSession, admin_session)
-        logged_in = row is not None and not_expired(row.expires_at)
+    logged_in = get_session_row(authorization, db) is not None
     return {"has_credentials": has_credentials, "logged_in": logged_in}
 
 
@@ -74,7 +65,7 @@ class RegisterBeginRequest(BaseModel):
 def register_begin(
     payload: RegisterBeginRequest,
     x_api_key: str = Header(default=""),
-    admin_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
     _require_webauthn_config()
@@ -85,10 +76,8 @@ def register_begin(
         expected = os.environ.get("API_SECRET", "")
         authorized = bool(expected) and secrets.compare_digest(x_api_key, expected)
     else:
-        if admin_session:
-            session_row = db.get(models.AdminSession, admin_session)
-            if session_row and not_expired(session_row.expires_at):
-                authorized = True
+        if get_session_row(authorization, db) is not None:
+            authorized = True
         if not authorized and payload.enrollment_code:
             code_row = db.get(models.EnrollmentCode, payload.enrollment_code.strip().upper())
             if code_row and not code_row.used and not_expired(code_row.expires_at):
@@ -129,7 +118,7 @@ class RegisterCompleteRequest(BaseModel):
 
 
 @router.post("/register/complete")
-def register_complete(payload: RegisterCompleteRequest, response: Response, db: Session = Depends(get_db)):
+def register_complete(payload: RegisterCompleteRequest, db: Session = Depends(get_db)):
     _require_webauthn_config()
     challenge_row = db.get(models.WebAuthnChallenge, payload.challenge_token)
     if challenge_row is None or challenge_row.kind != "registration" or not not_expired(challenge_row.expires_at):
@@ -157,8 +146,8 @@ def register_complete(payload: RegisterCompleteRequest, response: Response, db: 
     ))
     db.commit()
 
-    _set_session_cookie(response, db)
-    return {"status": "registered"}
+    token, _expires_at = create_session(db)
+    return {"status": "registered", "session_token": token}
 
 
 @router.post("/login/begin")
@@ -189,7 +178,7 @@ class LoginCompleteRequest(BaseModel):
 
 
 @router.post("/login/complete")
-def login_complete(payload: LoginCompleteRequest, response: Response, db: Session = Depends(get_db)):
+def login_complete(payload: LoginCompleteRequest, db: Session = Depends(get_db)):
     _require_webauthn_config()
     challenge_row = db.get(models.WebAuthnChallenge, payload.challenge_token)
     if challenge_row is None or challenge_row.kind != "authentication" or not not_expired(challenge_row.expires_at):
@@ -221,18 +210,16 @@ def login_complete(payload: LoginCompleteRequest, response: Response, db: Sessio
     cred_row.sign_count = verification.new_sign_count
     db.commit()
 
-    _set_session_cookie(response, db)
-    return {"status": "logged_in"}
+    token, _expires_at = create_session(db)
+    return {"status": "logged_in", "session_token": token}
 
 
 @router.post("/logout")
-def logout(response: Response, admin_session: str | None = Cookie(default=None), db: Session = Depends(get_db)):
-    if admin_session:
-        row = db.get(models.AdminSession, admin_session)
-        if row:
-            db.delete(row)
-            db.commit()
-    response.delete_cookie(SESSION_COOKIE, path="/")
+def logout(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    row = get_session_row(authorization, db)
+    if row is not None:
+        db.delete(row)
+        db.commit()
     return {"status": "logged_out"}
 
 
