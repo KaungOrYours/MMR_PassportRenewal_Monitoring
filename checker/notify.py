@@ -64,3 +64,27 @@ def format_integrity_warning(issues: list) -> str:
         lines.append(f"- page {issue['page_no']}: {issue['detail']}")
     lines.append("\nIf you were expecting to appear on this list, check the PDF manually.")
     return "\n".join(lines)
+
+
+def format_renewal_alert(watch_name: str, matches: list) -> str:
+    lines = [f"\U0001F6C2 <b>Passport renewal appointment for {watch_name}</b>"]
+    for m in matches:
+        badge = "\u2705 high confidence" if m.confidence == "high" else f"\u26a0\ufe0f medium confidence ({m.matched_on})"
+        lines.append(
+            f"\n<b>{m.row.name}</b>\n"
+            f"ID: <code>{m.row.masked_passport}</code>\n"
+            f"Type change: {m.row.current_type or '?'} \u2192 {m.row.new_type or '?'}\n"
+            f"<b>Appointment date: {m.row.appointment_date or 'n/a'}</b>\n"
+            f"{badge}\n"
+            f"\u26a0\ufe0f Go to the embassy in person on this date to complete the renewal."
+        )
+    return "\n".join(lines)
+
+
+def format_renewal_heartbeat(row_count: int, photo_count: int, match_count: int) -> str:
+    status = f"{match_count} match(es)" if match_count else "no matches"
+    return (
+        f"\U0001F4CB New renewal appointment list posted on the consular Telegram channel.\n"
+        f"{row_count} entries across {photo_count} image(s).\n"
+        f"{status} against your watchlist."
+    )

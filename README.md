@@ -1,21 +1,43 @@
 # MMR Passport Renewal Monitoring System
 
-Watches the Myanmar Embassy Singapore's passport-renewal approval list
-(published weekly, usually Sundays) for specific names/passport numbers and
-sends a Telegram alert the moment a match appears.
+Watches two things the Myanmar Embassy Singapore publishes, and sends a
+Telegram alert the moment a watched name/passport appears:
+
+1. **The website's Lost & Seaman/Offshore approved-list PDF** -- for people
+   whose passport was lost abroad, or who are seamen/offshore workers,
+   approved to get a replacement passport issued.
+2. **The `@mesg15` Telegram channel's PV/PJ renewal appointment posts** --
+   the actual *standard passport renewal* list: people approved to upgrade
+   their passport book type (e.g. PV -> PJ) with a specific appointment date
+   to show up at the embassy. This is the one most people actually need.
+
+These are genuinely different lists from different sources (confirmed by
+checking the embassy site directly -- there is no general-renewal list
+published there; it only has the Lost/Seaman one). Both are monitored
+independently against the same watchlist.
 
 ## How it works
 
 ```
-GitHub Actions (every 3h, free)
-   checker/main.py
-     -> conditional GET the embassy PDF (ETag/Last-Modified; cheap when unchanged)
-     -> extract text (pdftotext) or OCR (tesseract, for scanned PDFs)
-     -> parse rows, anchored on passport/ID number, with an integrity check
-        that re-OCRs any page where rows were silently dropped
-     -> match against the watchlist (passport number + fuzzy name)
-     -> write results to Neon Postgres
-     -> send a Telegram alert
+GitHub Actions (every 3h, free) -- checker/main.py runs BOTH checks:
+
+  [1] embassy_pdf check
+      -> conditional GET the embassy PDF (ETag/Last-Modified; cheap when unchanged)
+      -> extract text (pdftotext) or OCR (tesseract, for scanned PDFs)
+      -> parse rows, anchored on passport/ID number, with an integrity check
+         that re-OCRs any page where rows were silently dropped
+      -> match against the watchlist (passport number + fuzzy name)
+
+  [2] telegram_renewal check
+      -> Telethon (Telegram client API, full-resolution photos) fetches new
+         posts from @mesg15 since the last processed message id
+      -> OCR each photo (tesseract), parse the PV/PJ table format, same
+         integrity-check-and-retry pattern as [1]
+      -> match against the watchlist (masked passport number + fuzzy name --
+         the channel redacts the middle 2 of 6 digits for privacy, so
+         matching checks the visible first/last 2 digits plus the letters)
+
+  Both checks -> write results to Neon Postgres -> send a Telegram alert
 
 Vercel (frontend) <--API key--> Render (FastAPI backend) <--> Neon Postgres
 ```
@@ -48,18 +70,40 @@ your chat; the chat ID is already captured as `REDACTED_OPERATOR_TELEGRAM_CHAT_I
    automatically on first run (`checker/db.py` calls `create_all`) -- no
    separate migration step for this schema's scope.
 
-### 3. GitHub Actions secrets
+### 3. Telegram client API (to read @mesg15)
+
+This is separate from the bot above -- the bot can only *send* messages to
+you; reading another channel's full-resolution photos requires Telegram's
+client API, logged in as your own account (read-only access to a public
+channel, same as just viewing it in the app).
+
+1. Get a free `api_id`/`api_hash` from https://my.telegram.org (log in,
+   "API development tools", create an app -- any name/platform is fine)
+2. Run the one-time interactive login **yourself, locally** (not here in
+   chat -- it asks for your phone number and the login code):
+   ```bash
+   cd checker && source ../.venv/bin/activate   # or pip install telethon first
+   python3 generate_session.py
+   ```
+3. It prints a session string. Treat it like a password -- save it **only**
+   as the GitHub secret below, never anywhere else.
+
+### 4. GitHub Actions secrets
 
 In the repo's Settings -> Secrets and variables -> Actions, add:
 
 - `NEON_DATABASE_URL`
 - `TELEGRAM_BOT_TOKEN` (the regenerated token)
 - `TELEGRAM_CHAT_ID` = `REDACTED_OPERATOR_TELEGRAM_CHAT_ID`
+- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` (from step 3.1)
+- `TELEGRAM_SESSION_STRING` (from step 3.2 -- never commit this)
 
 The workflow (`.github/workflows/check.yml`) runs every 3 hours and on
-manual dispatch.
+manual dispatch. On the very first run, the Telegram check only bootstraps
+its watermark (no backfill of the channel's history) -- it will start
+alerting on posts from that point forward.
 
-### 4. Backend -- Render
+### 5. Backend -- Render
 
 Uses `render.yaml` (Blueprint). In Render: New -> Blueprint -> point at this
 repo. Set these env vars when prompted:
@@ -72,7 +116,7 @@ repo. Set these env vars when prompted:
 - `FRONTEND_ORIGIN` -- your Vercel URL, once you have it (comma-separate if
   more than one)
 
-### 5. Frontend -- Vercel
+### 6. Frontend -- Vercel
 
 Import the repo, set the project root to `frontend/`, and set env vars:
 
@@ -106,9 +150,9 @@ cp .env.example .env.local   # fill in VITE_API_BASE / VITE_API_KEY
 npm run dev
 ```
 
-## Known data-format quirks (why the parser is written the way it is)
+## Known data-format quirks (why the parsers are written the way they are)
 
-The embassy's PDF format is not consistent:
+### Embassy website PDF (`checker/parse.py`)
 
 - Some weeks it's a text-layer PDF (Excel export), other times a scanned
   image needing OCR -- `checker/extract.py` auto-detects which.
@@ -120,8 +164,28 @@ The embassy's PDF format is not consistent:
   index/ID line -- the parser pulls the name from the previous line in that
   case.
 - OCR occasionally misreads a capital `I` as `!` -- folded before matching.
-- A per-page integrity check compares the count of index markers (`1.`,
-  `2.`, Burmese `၁။` etc.) against the count of successfully parsed rows.
-  Any shortfall triggers a re-OCR at higher DPI; if it's still short, the
-  gap is recorded and surfaced as a warning in the Telegram alert rather
-  than silently treated as "no match."
+
+### Telegram renewal posts (`checker/parse_renewal.py`)
+
+- Passport numbers are **partially masked** by the embassy for privacy
+  (`MF 40**22` -- the middle 2 of 6 digits are redacted). Matching checks
+  the letters plus the visible first/last 2 digits; the 2 redacted digits
+  are inherently unrecoverable from this source, so a coincidental
+  collision there (different person, same visible digits) is possible in
+  theory but requires the name to also match, which is effectively never
+  true for a different person.
+- The table uses a bare numeric index (no `.`/`။` punctuation) and one
+  appointment date per image, applied to every row on that image.
+- `t.me/s/<channel>` (the public no-login preview) serves **downscaled,
+  recompressed** photos -- OCR accuracy on those is visibly worse. The
+  checker instead uses Telegram's client API (Telethon) to fetch the
+  original full-resolution photos, which requires the one-time login in
+  the setup section above.
+
+### Both sources
+
+A per-page/per-image integrity check compares the count of index markers
+against the count of successfully parsed rows. Any shortfall triggers a
+re-OCR at a different setting; if it's still short, the gap is recorded and
+surfaced as a warning in the Telegram alert rather than silently treated as
+"no match."

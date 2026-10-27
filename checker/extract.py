@@ -70,3 +70,16 @@ def extract_pdf(pdf_path: Path) -> tuple[list[PageText], str]:
 def reocr_page(pdf_path: Path, page_no: int) -> str:
     """Fallback re-OCR at higher DPI / different PSM for pages that failed the integrity check."""
     return _ocr_page(pdf_path, page_no, dpi=OCR_DPI_RETRY, psm=4)
+
+
+def ocr_image_bytes(data: bytes, psm: int = 4) -> str:
+    """OCR a standalone raster image (e.g. a photo downloaded from Telegram),
+    as opposed to a page rasterized from a PDF."""
+    with tempfile.NamedTemporaryFile(suffix=".jpg") as f:
+        f.write(data)
+        f.flush()
+        result = subprocess.run(
+            ["tesseract", f.name, "-", "--psm", str(psm), "-l", "eng"],
+            capture_output=True, text=True,
+        )
+        return result.stdout

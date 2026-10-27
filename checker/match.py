@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from rapidfuzz import fuzz
 
 from .parse import Row, canonical_passport, normalize_name
+from .parse_renewal import RenewalRow
 
 # characters that OCR and manual typing commonly confuse in alphanumeric codes
 _CONFUSABLE_FOLD = str.maketrans({
@@ -81,6 +82,57 @@ def find_matches(watchlist: list[WatchlistEntry], rows: list[Row]) -> list[Match
     for entry in watchlist:
         for row in rows:
             m = match_row(entry, row)
+            if m is not None:
+                matches.append(m)
+    return matches
+
+
+@dataclass
+class RenewalMatch:
+    watchlist_id: int
+    row: RenewalRow
+    confidence: str
+    matched_on: str
+    score: int
+
+
+def masked_passport_matches(full_passport: str, masked: str) -> bool:
+    """Compares a watchlist entry's full passport number against a masked
+    entry (e.g. "MG77**48") where the middle two of the six digits are
+    redacted -- checks the letters and the visible first/last two digits."""
+    full = canonical_passport(full_passport)
+    m = re.match(r"^([A-Z]{2})(\d{6})$", full)
+    if not m:
+        return False
+    full_letters, full_digits = m.groups()
+
+    masked = masked.upper().replace(" ", "")
+    mm = re.match(r"^([A-Z]{2})(\d{2})\*{1,2}(\d{2})$", masked)
+    if not mm:
+        return False
+    masked_letters, first2, last2 = mm.groups()
+
+    return full_letters == masked_letters and full_digits[0:2] == first2 and full_digits[4:6] == last2
+
+
+def match_renewal_row(entry: WatchlistEntry, row: RenewalRow) -> RenewalMatch | None:
+    passport_match = entry.passport_no is not None and masked_passport_matches(entry.passport_no, row.masked_passport)
+    name_match, name_score = _name_matches(entry.full_name, row.name)
+
+    if passport_match and name_match:
+        return RenewalMatch(entry.id, row, "high", "name+passport", name_score)
+    if passport_match:
+        return RenewalMatch(entry.id, row, "medium", "passport", name_score)
+    if name_match:
+        return RenewalMatch(entry.id, row, "medium", "name", name_score)
+    return None
+
+
+def find_renewal_matches(watchlist: list[WatchlistEntry], rows: list[RenewalRow]) -> list[RenewalMatch]:
+    matches = []
+    for entry in watchlist:
+        for row in rows:
+            m = match_renewal_row(entry, row)
             if m is not None:
                 matches.append(m)
     return matches

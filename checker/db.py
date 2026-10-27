@@ -33,6 +33,8 @@ class Snapshot(Base):
 
     id = Column(Integer, primary_key=True)
     fetched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    source = Column(String, nullable=False, default="embassy_pdf")  # "embassy_pdf" | "telegram_renewal"
+    external_ref = Column(String, nullable=True)  # e.g. highest Telegram message id in this post, for dedup
     etag = Column(String, nullable=True)
     last_modified = Column(String, nullable=True)
     sha256 = Column(String, nullable=False, unique=True)
@@ -52,7 +54,7 @@ class Entry(Base):
     page_no = Column(Integer, nullable=False)
     name = Column(String, nullable=False)
     passport_no = Column(String, nullable=False)
-    id_kind = Column(String, nullable=False)  # "passport" | "other"
+    id_kind = Column(String, nullable=False)  # "passport" | "other" | "masked_passport"
     approved_date = Column(String, nullable=True)
     remark = Column(Text, nullable=True)
 
@@ -79,6 +81,7 @@ class MatchRecord(Base):
     watchlist_id = Column(Integer, ForeignKey("watchlist.id"), nullable=False)
     entry_id = Column(Integer, ForeignKey("entries.id"), nullable=False)
     snapshot_id = Column(Integer, ForeignKey("snapshots.id"), nullable=False)
+    source = Column(String, nullable=False, default="embassy_pdf")  # "embassy_pdf" | "telegram_renewal"
     passport_canonical = Column(String, nullable=False)
     confidence = Column(String, nullable=False)  # "high" | "medium"
     matched_on = Column(String, nullable=False)
@@ -92,7 +95,32 @@ def get_engine(database_url: str | None = None):
     return create_engine(url, pool_pre_ping=True)
 
 
+# columns added after the initial deploy -- create_all() only creates
+# missing TABLES, not missing columns on existing ones, so a live DB needs
+# these added explicitly. No Alembic for a schema this small; this is a
+# plain additive ADD COLUMN, safe to run every startup.
+_ADDITIVE_COLUMNS = [
+    ("snapshots", "source", "VARCHAR DEFAULT 'embassy_pdf'"),
+    ("snapshots", "external_ref", "VARCHAR"),
+    ("matches", "source", "VARCHAR DEFAULT 'embassy_pdf'"),
+]
+
+
+def _migrate_additive_columns(engine) -> None:
+    is_sqlite = engine.dialect.name == "sqlite"
+    with engine.begin() as conn:
+        for table, column, coltype in _ADDITIVE_COLUMNS:
+            if is_sqlite:
+                existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+                if column in existing:
+                    continue
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            else:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {coltype}")
+
+
 def get_session(database_url: str | None = None):
     engine = get_engine(database_url)
     Base.metadata.create_all(engine)
+    _migrate_additive_columns(engine)
     return sessionmaker(bind=engine)()
