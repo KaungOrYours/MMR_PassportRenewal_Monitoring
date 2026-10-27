@@ -87,6 +87,15 @@ def list_matches(session: Session = Depends(get_db)):
     return out
 
 
+@app.delete("/api/matches/{match_id}", status_code=204, dependencies=[Depends(require_api_key)])
+def dismiss_match(match_id: int, session: Session = Depends(get_db)):
+    match = session.get(models.MatchRecord, match_id)
+    if match is None:
+        raise HTTPException(404, "Not found")
+    session.delete(match)
+    session.commit()
+
+
 @app.get("/api/snapshots", response_model=list[SnapshotOut], dependencies=[Depends(require_api_key)])
 def list_snapshots(session: Session = Depends(get_db)):
     return session.query(models.Snapshot).order_by(models.Snapshot.fetched_at.desc()).all()

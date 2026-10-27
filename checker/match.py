@@ -57,7 +57,13 @@ def _name_matches(watch_name: str, row_name: str) -> tuple[bool, int]:
     # "MA JI SENG GAM" vs "MAJISENG GAM"
     if a.replace(" ", "") == b.replace(" ", ""):
         return True, 100
-    score = fuzz.token_set_ratio(a, b)
+    # token_sort_ratio (not token_set_ratio): token_set_ratio scores a
+    # perfect 100 whenever one name's words are a subset of the other's,
+    # which is a false-positive magnet for Myanmar names that commonly
+    # share a short base ("KAUNG HTET" vs "KAUNG HTET KYAW" are different
+    # people, not an OCR variant of the same name). token_sort_ratio
+    # penalizes the extra/missing word via overall string length instead.
+    score = fuzz.token_sort_ratio(a, b)
     return score >= NAME_MATCH_THRESHOLD, int(score)
 
 

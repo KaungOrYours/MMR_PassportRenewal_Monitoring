@@ -68,6 +68,7 @@ export const api = {
     request<Watchlist>(`/api/watchlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteWatchlist: (id: number) => request<void>(`/api/watchlist/${id}`, { method: 'DELETE' }),
   listMatches: () => request<MatchRecord[]>('/api/matches'),
+  dismissMatch: (id: number) => request<void>(`/api/matches/${id}`, { method: 'DELETE' }),
   listSnapshots: () => request<Snapshot[]>('/api/snapshots'),
   snapshotEntries: (id: number, q = '') =>
     request<Entry[]>(`/api/snapshots/${id}/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
