@@ -1,12 +1,31 @@
 import { useEffect, useState } from 'react'
 import { api, type Watchlist } from '../api'
 
+function toTitleCase(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ')
+}
+
+function maskPassport(passport: string): string {
+  const compact = passport.replace(/\s+/g, '').toUpperCase()
+  const m = compact.match(/^([A-Z]{1,3})(\d{4,7})$/)
+  if (!m) return compact
+  const [, letters, digits] = m
+  if (digits.length < 4) return `${letters}${digits}`
+  return `${letters}${digits.slice(0, 2)}**${digits.slice(-2)}`
+}
+
 export default function WatchlistView() {
   const [items, setItems] = useState<Watchlist[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ full_name: '', passport_no: '', note: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [revealed, setRevealed] = useState<Set<number>>(new Set())
 
   const load = () => {
     setLoading(true)
@@ -25,8 +44,8 @@ export default function WatchlistView() {
     setSubmitting(true)
     try {
       await api.createWatchlist({
-        full_name: form.full_name.trim(),
-        passport_no: form.passport_no.trim() || undefined,
+        full_name: toTitleCase(form.full_name),
+        passport_no: form.passport_no.trim().toUpperCase() || undefined,
         note: form.note.trim() || undefined,
       })
       setForm({ full_name: '', passport_no: '', note: '' })
@@ -43,10 +62,13 @@ export default function WatchlistView() {
     load()
   }
 
-  const remove = async (w: Watchlist) => {
-    if (!confirm(`Remove ${w.full_name} from the watchlist?`)) return
-    await api.deleteWatchlist(w.id)
-    load()
+  const toggleReveal = (id: number) => {
+    setRevealed((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   return (
@@ -92,14 +114,25 @@ export default function WatchlistView() {
                 <th className="px-3 py-2">Passport No.</th>
                 <th className="px-3 py-2">Note</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((w) => (
                 <tr key={w.id} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-3 py-2 font-medium">{w.full_name}</td>
-                  <td className="px-3 py-2 font-mono">{w.passport_no || '—'}</td>
+                  <td className="px-3 py-2 font-mono">
+                    {w.passport_no ? (
+                      <button
+                        onClick={() => toggleReveal(w.id)}
+                        className="hover:underline"
+                        title={revealed.has(w.id) ? 'Click to hide' : 'Click to reveal'}
+                      >
+                        {revealed.has(w.id) ? w.passport_no : maskPassport(w.passport_no)}
+                      </button>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
                   <td className="px-3 py-2">
                     <button
@@ -111,11 +144,6 @@ export default function WatchlistView() {
                       }`}
                     >
                       {w.active ? 'Active' : 'Paused'}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button onClick={() => remove(w)} className="text-red-600 text-xs hover:underline">
-                      Remove
                     </button>
                   </td>
                 </tr>

@@ -10,7 +10,7 @@ from checker import db as models
 
 from .auth import require_api_key
 from .schemas import (
-    EntryOut, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate,
+    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate,
 )
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
@@ -113,6 +113,28 @@ def snapshot_entries(snapshot_id: int, q: str = Query(default=""), session: Sess
         like = f"%{q.upper()}%"
         query = query.filter(or_(models.Entry.name.ilike(like), models.Entry.passport_no.ilike(like)))
     return query.order_by(models.Entry.page_no, models.Entry.id).all()
+
+
+@app.get("/api/entries/search", response_model=list[EntrySearchResult], dependencies=[Depends(require_api_key)])
+def search_entries(q: str = Query(min_length=2), limit: int = Query(default=200, le=500), session: Session = Depends(get_db)):
+    """Searches every entry ever recorded, across all snapshots/sources."""
+    like = f"%{q.upper()}%"
+    rows = (
+        session.query(models.Entry, models.Snapshot)
+        .join(models.Snapshot, models.Entry.snapshot_id == models.Snapshot.id)
+        .filter(or_(models.Entry.name.ilike(like), models.Entry.passport_no.ilike(like)))
+        .order_by(models.Snapshot.fetched_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        EntrySearchResult(
+            id=e.id, page_no=e.page_no, name=e.name, passport_no=e.passport_no, id_kind=e.id_kind,
+            approved_date=e.approved_date, remark=e.remark,
+            snapshot_id=s.id, source=s.source, fetched_at=s.fetched_at,
+        )
+        for e, s in rows
+    ]
 
 
 @app.post("/api/check-now", dependencies=[Depends(require_api_key)])

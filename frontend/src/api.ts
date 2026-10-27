@@ -20,6 +20,12 @@ export interface Entry {
   remark: string | null
 }
 
+export interface EntrySearchResult extends Entry {
+  snapshot_id: number
+  source: string
+  fetched_at: string
+}
+
 export interface Snapshot {
   id: number
   fetched_at: string
@@ -72,5 +78,6 @@ export const api = {
   listSnapshots: () => request<Snapshot[]>('/api/snapshots'),
   snapshotEntries: (id: number, q = '') =>
     request<Entry[]>(`/api/snapshots/${id}/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  searchEntries: (q: string) => request<EntrySearchResult[]>(`/api/entries/search?q=${encodeURIComponent(q)}`),
   checkNow: () => request<{ status: string }>('/api/check-now', { method: 'POST' }),
 }

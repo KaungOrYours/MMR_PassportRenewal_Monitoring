@@ -53,6 +53,19 @@ class SnapshotOut(BaseModel):
         from_attributes = True
 
 
+class EntrySearchResult(BaseModel):
+    id: int
+    page_no: int
+    name: str
+    passport_no: str
+    id_kind: str
+    approved_date: str | None
+    remark: str | None
+    snapshot_id: int
+    source: str
+    fetched_at: datetime
+
+
 class ExtractionIssueOut(BaseModel):
     id: int
     snapshot_id: int
