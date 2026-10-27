@@ -53,6 +53,17 @@ class SnapshotOut(BaseModel):
         from_attributes = True
 
 
+class ExtractionIssueOut(BaseModel):
+    id: int
+    snapshot_id: int
+    page_no: int
+    kind: str
+    detail: str | None
+
+    class Config:
+        from_attributes = True
+
+
 class MatchOut(BaseModel):
     id: int
     watchlist_id: int

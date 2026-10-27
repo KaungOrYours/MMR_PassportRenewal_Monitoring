@@ -74,3 +74,17 @@ def test_unrelated_entry_does_not_match_renewal_row():
     row = next(r for r in result.rows if r.name == "NYAN LIN HTET")
     entry = WatchlistEntry(id=1, full_name="Completely Different Person", passport_no="ZZ999999")
     assert match_renewal_row(entry, row) is None
+
+
+def test_renewal_passport_only_match_is_not_reported():
+    result = parse_renewal_page(1, SAMPLE_PAGE)
+    row = next(r for r in result.rows if r.name == "NYAN LIN HTET")
+    entry = WatchlistEntry(id=1, full_name="Completely Different Person", passport_no="MG771548")
+    assert match_renewal_row(entry, row) is None
+
+
+def test_renewal_name_only_match_is_not_reported():
+    result = parse_renewal_page(1, SAMPLE_PAGE)
+    row = next(r for r in result.rows if r.name == "NYAN LIN HTET")
+    entry = WatchlistEntry(id=1, full_name="Nyan Lin Htet", passport_no="ZZ999999")
+    assert match_renewal_row(entry, row) is None

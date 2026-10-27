@@ -10,7 +10,7 @@ from checker import db as models
 
 from .auth import require_api_key
 from .schemas import (
-    EntryOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate,
+    EntryOut, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate,
 )
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
@@ -99,6 +99,11 @@ def dismiss_match(match_id: int, session: Session = Depends(get_db)):
 @app.get("/api/snapshots", response_model=list[SnapshotOut], dependencies=[Depends(require_api_key)])
 def list_snapshots(session: Session = Depends(get_db)):
     return session.query(models.Snapshot).order_by(models.Snapshot.fetched_at.desc()).all()
+
+
+@app.get("/api/extraction-issues", response_model=list[ExtractionIssueOut], dependencies=[Depends(require_api_key)])
+def list_extraction_issues(session: Session = Depends(get_db)):
+    return session.query(models.ExtractionIssue).order_by(models.ExtractionIssue.id.desc()).all()
 
 
 @app.get("/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut], dependencies=[Depends(require_api_key)])
