@@ -10,15 +10,6 @@ function toTitleCase(name: string): string {
     .join(' ')
 }
 
-function maskPassport(passport: string): string {
-  const compact = passport.replace(/\s+/g, '').toUpperCase()
-  const m = compact.match(/^([A-Z]{1,3})(\d{4,7})$/)
-  if (!m) return compact
-  const [, letters, digits] = m
-  if (digits.length < 4) return `${letters}${digits}`
-  return `${letters}${digits.slice(0, 1)}***${digits.slice(-2)}`
-}
-
 export default function WatchlistView() {
   const [items, setItems] = useState<Watchlist[]>([])
   const [loading, setLoading] = useState(true)
@@ -110,9 +101,7 @@ export default function WatchlistView() {
               {items.map((w) => (
                 <tr key={w.id} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-3 py-2 font-medium">{w.full_name}</td>
-                  <td className="px-3 py-2 font-mono">
-                    {w.passport_no ? maskPassport(w.passport_no) : '—'}
-                  </td>
+                  <td className="px-3 py-2 font-mono">{w.passport_no || '—'}</td>
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
                   <td className="px-3 py-2">
                     <button

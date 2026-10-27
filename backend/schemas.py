@@ -1,6 +1,23 @@
+import re
 from datetime import datetime
 
 from pydantic import BaseModel
+
+
+def mask_passport(passport: str | None) -> str | None:
+    """Server-side masking so the raw API response never carries the full
+    number -- the key gating this API is embedded in the public frontend
+    bundle, so UI-only masking would be purely cosmetic."""
+    if not passport:
+        return passport
+    compact = re.sub(r"\s+", "", passport).upper()
+    m = re.match(r"^([A-Z]{1,3})(\d{4,7})$", compact)
+    if not m:
+        return compact
+    letters, digits = m.groups()
+    if len(digits) < 4:
+        return f"{letters}{digits}"
+    return f"{letters}{digits[:1]}***{digits[-2:]}"
 
 
 class WatchlistIn(BaseModel):

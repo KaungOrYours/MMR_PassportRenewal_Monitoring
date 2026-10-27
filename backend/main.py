@@ -10,7 +10,8 @@ from checker import db as models
 
 from .auth import require_api_key
 from .schemas import (
-    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate,
+    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut,
+    WatchlistUpdate, mask_passport,
 )
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
@@ -37,9 +38,20 @@ def health():
     return {"status": "ok"}
 
 
+def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
+    # the API key gating this endpoint lives in the public frontend bundle,
+    # so the server must not hand back the full number -- UI-only masking
+    # is bypassable by anyone who reads the key out of the bundle
+    return WatchlistOut(
+        id=entry.id, full_name=entry.full_name, passport_no=mask_passport(entry.passport_no),
+        note=entry.note, active=entry.active, created_at=entry.created_at,
+    )
+
+
 @app.get("/api/watchlist", response_model=list[WatchlistOut], dependencies=[Depends(require_api_key)])
 def list_watchlist(session: Session = Depends(get_db)):
-    return session.query(models.Watchlist).order_by(models.Watchlist.created_at.desc()).all()
+    rows = session.query(models.Watchlist).order_by(models.Watchlist.created_at.desc()).all()
+    return [_to_watchlist_out(w) for w in rows]
 
 
 @app.post("/api/watchlist", response_model=WatchlistOut, dependencies=[Depends(require_api_key)])
@@ -48,7 +60,7 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     session.add(entry)
     session.commit()
     session.refresh(entry)
-    return entry
+    return _to_watchlist_out(entry)
 
 
 @app.patch("/api/watchlist/{entry_id}", response_model=WatchlistOut, dependencies=[Depends(require_api_key)])
@@ -60,7 +72,7 @@ def update_watchlist(entry_id: int, payload: WatchlistUpdate, session: Session =
         setattr(entry, field, value)
     session.commit()
     session.refresh(entry)
-    return entry
+    return _to_watchlist_out(entry)
 
 
 @app.delete("/api/watchlist/{entry_id}", status_code=204, dependencies=[Depends(require_api_key)])
