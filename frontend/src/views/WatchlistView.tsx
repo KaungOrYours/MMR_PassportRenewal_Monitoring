@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Watchlist } from '../api'
+import { api, type MatchRecord, type Watchlist } from '../api'
 
 function toTitleCase(name: string): string {
   return name
@@ -10,8 +10,41 @@ function toTitleCase(name: string): string {
     .join(' ')
 }
 
+type RowStatus =
+  | { kind: 'paused' }
+  | { kind: 'pending' }
+  | { kind: 'matched'; date: string | null }
+
+function statusFor(w: Watchlist, matchesByWatchlist: Map<number, MatchRecord>): RowStatus {
+  if (!w.active) return { kind: 'paused' }
+  const match = matchesByWatchlist.get(w.id)
+  if (match) return { kind: 'matched', date: match.entry.approved_date }
+  return { kind: 'pending' }
+}
+
+function StatusBadge({ status, onClick }: { status: RowStatus; onClick: () => void }) {
+  const styles: Record<RowStatus['kind'], string> = {
+    paused: 'bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400',
+    pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+    matched: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  }
+  const label =
+    status.kind === 'paused'
+      ? 'Paused'
+      : status.kind === 'pending'
+        ? 'Pending'
+        : `Appointment: ${status.date || 'date n/a'}`
+
+  return (
+    <button onClick={onClick} className={`rounded px-2 py-0.5 text-xs ${styles[status.kind]}`}>
+      {label}
+    </button>
+  )
+}
+
 export default function WatchlistView() {
   const [items, setItems] = useState<Watchlist[]>([])
+  const [matches, setMatches] = useState<MatchRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ full_name: '', passport_no: '', note: '' })
@@ -19,9 +52,11 @@ export default function WatchlistView() {
 
   const load = () => {
     setLoading(true)
-    api
-      .listWatchlist()
-      .then(setItems)
+    Promise.all([api.listWatchlist(), api.listMatches()])
+      .then(([w, m]) => {
+        setItems(w)
+        setMatches(m)
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
   }
@@ -50,6 +85,15 @@ export default function WatchlistView() {
   const toggleActive = async (w: Watchlist) => {
     await api.updateWatchlist(w.id, { active: !w.active })
     load()
+  }
+
+  // most recent match per person, preferring one that actually has a date
+  const matchesByWatchlist = new Map<number, MatchRecord>()
+  for (const m of matches) {
+    const existing = matchesByWatchlist.get(m.watchlist_id)
+    if (!existing || (!existing.entry.approved_date && m.entry.approved_date)) {
+      matchesByWatchlist.set(m.watchlist_id, m)
+    }
   }
 
   return (
@@ -104,16 +148,7 @@ export default function WatchlistView() {
                   <td className="px-3 py-2 font-mono">{w.passport_no || '—'}</td>
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
                   <td className="px-3 py-2">
-                    <button
-                      onClick={() => toggleActive(w)}
-                      className={`rounded px-2 py-0.5 text-xs ${
-                        w.active
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                          : 'bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
-                      }`}
-                    >
-                      {w.active ? 'Active' : 'Waiting'}
-                    </button>
+                    <StatusBadge status={statusFor(w, matchesByWatchlist)} onClick={() => toggleActive(w)} />
                   </td>
                 </tr>
               ))}
