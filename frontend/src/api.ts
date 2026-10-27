@@ -23,6 +23,7 @@ export interface Entry {
 export interface Snapshot {
   id: number
   fetched_at: string
+  source: string
   page_count: number
   mode: string
   row_count: number
@@ -31,6 +32,7 @@ export interface Snapshot {
 export interface MatchRecord {
   id: number
   watchlist_id: number
+  source: string
   watchlist_name: string
   entry: Entry
   snapshot_id: number

@@ -81,7 +81,7 @@ def list_matches(session: Session = Depends(get_db)):
         watch = session.get(models.Watchlist, m.watchlist_id)
         out.append(MatchOut(
             id=m.id, watchlist_id=m.watchlist_id, watchlist_name=watch.full_name if watch else "(deleted)",
-            entry=EntryOut.model_validate(entry), snapshot_id=m.snapshot_id,
+            entry=EntryOut.model_validate(entry), snapshot_id=m.snapshot_id, source=m.source,
             confidence=m.confidence, matched_on=m.matched_on, score=m.score, created_at=m.created_at,
         ))
     return out

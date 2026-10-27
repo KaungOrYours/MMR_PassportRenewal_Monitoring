@@ -44,6 +44,7 @@ class EntryOut(BaseModel):
 class SnapshotOut(BaseModel):
     id: int
     fetched_at: datetime
+    source: str
     page_count: int
     mode: str
     row_count: int
@@ -58,6 +59,7 @@ class MatchOut(BaseModel):
     watchlist_name: str
     entry: EntryOut
     snapshot_id: int
+    source: str
     confidence: str
     matched_on: str
     score: int

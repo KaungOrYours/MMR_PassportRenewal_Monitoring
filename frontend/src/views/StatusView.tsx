@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { api, type Snapshot } from '../api'
 
+const SOURCE_LABELS: Record<string, string> = {
+  embassy_pdf: 'Website PDF (Lost & Seaman/Offshore)',
+  telegram_renewal: 'Telegram channel (PV/PJ renewal)',
+}
+
+function describeSnapshot(s: Snapshot): string {
+  if (s.mode === 'bootstrap') return 'Watching for new posts from here forward (no history scanned).'
+  return `${s.row_count} entries across ${s.page_count} page(s), extracted via ${s.mode}`
+}
+
 export default function StatusView() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'down'>('checking')
@@ -17,7 +27,11 @@ export default function StatusView() {
 
   useEffect(load, [])
 
-  const latest = snapshots[0]
+  const latestBySource = Object.keys(SOURCE_LABELS).map((source) => ({
+    source,
+    label: SOURCE_LABELS[source],
+    snapshot: snapshots.find((s) => s.source === source),
+  }))
 
   const triggerCheck = async () => {
     setDispatching(true)
@@ -47,26 +61,27 @@ export default function StatusView() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-1">
-        <h3 className="font-semibold">Last check</h3>
-        {latest ? (
-          <>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              {new Date(latest.fetched_at).toLocaleString()}
-            </p>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              {latest.row_count} entries across {latest.page_count} page(s), extracted via {latest.mode}
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-neutral-500">No checks recorded yet.</p>
-        )}
-      </div>
+      {latestBySource.map(({ source, label, snapshot }) => (
+        <div key={source} className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-1">
+          <h3 className="font-semibold">{label}</h3>
+          {snapshot ? (
+            <>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                {new Date(snapshot.fetched_at).toLocaleString()}
+              </p>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">{describeSnapshot(snapshot)}</p>
+            </>
+          ) : (
+            <p className="text-sm text-neutral-500">No checks recorded yet.</p>
+          )}
+        </div>
+      ))}
 
       <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-2">
         <h3 className="font-semibold">Schedule</h3>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Runs automatically every 3 hours via GitHub Actions. The embassy typically publishes on Sundays.
+          Both checks run automatically every 3 hours via GitHub Actions. The embassy typically publishes on
+          Sundays.
         </p>
         <button
           onClick={triggerCheck}
