@@ -134,28 +134,10 @@ export default function WatchlistView() {
         </button>
       </form>
 
-      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-2 text-xs text-neutral-500">
-        <p>
-          <span className="font-medium text-neutral-700 dark:text-neutral-300">Telegram ID (optional):</span> if set,
-          alerts for this person go to their own Telegram instead of the default chat. To find your Telegram ID,
-          message{' '}
-          <a
-            href="https://t.me/userinfobot"
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-600 hover:underline"
-          >
-            @userinfobot
-          </a>{' '}
-          on Telegram — it replies instantly with your ID.
-        </p>
-        <p>
-          <span className="font-medium text-neutral-700 dark:text-neutral-300">Your data, your responsibility:</span>{' '}
-          this is a best-effort personal monitoring tool, not an official embassy service. Matching can miss entries
-          (OCR errors, unclear names) or misfire (shared names). Always verify independently before relying on an
-          alert, and do not submit anyone's information without their consent.
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500">
+        Anyone can also add themselves at the public signup link without needing admin access — entries added here
+        or there show up in the same list below.
+      </p>
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {loading ? (

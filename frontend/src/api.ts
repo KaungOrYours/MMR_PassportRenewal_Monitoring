@@ -1,5 +1,4 @@
 const API_BASE = import.meta.env.VITE_API_BASE as string
-const API_KEY = import.meta.env.VITE_API_KEY as string
 
 export interface Watchlist {
   id: number
@@ -49,12 +48,23 @@ export interface MatchRecord {
   created_at: string
 }
 
+export interface AuthStatus {
+  has_credentials: boolean
+  logged_in: boolean
+}
+
+export interface Device {
+  id: number
+  device_label: string | null
+  created_at: string
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': API_KEY,
       ...options.headers,
     },
   })
@@ -83,4 +93,28 @@ export const api = {
     request<Entry[]>(`/api/snapshots/${id}/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   searchEntries: (q: string) => request<EntrySearchResult[]>(`/api/entries/search?q=${encodeURIComponent(q)}`),
   checkNow: () => request<{ status: string }>('/api/check-now', { method: 'POST' }),
+
+  authStatus: () => request<AuthStatus>('/api/auth/status'),
+  registerBegin: (deviceLabel: string, opts: { bootstrapKey?: string; enrollmentCode?: string } = {}) =>
+    request<{ options: unknown; challenge_token: string }>('/api/auth/register/begin', {
+      method: 'POST',
+      headers: opts.bootstrapKey ? { 'X-API-Key': opts.bootstrapKey } : {},
+      body: JSON.stringify({ device_label: deviceLabel, enrollment_code: opts.enrollmentCode }),
+    }),
+  registerComplete: (credential: unknown, challengeToken: string, deviceLabel: string) =>
+    request<{ status: string }>('/api/auth/register/complete', {
+      method: 'POST',
+      body: JSON.stringify({ credential, challenge_token: challengeToken, device_label: deviceLabel }),
+    }),
+  loginBegin: () => request<{ options: unknown; challenge_token: string }>('/api/auth/login/begin', { method: 'POST' }),
+  loginComplete: (credential: unknown, challengeToken: string) =>
+    request<{ status: string }>('/api/auth/login/complete', {
+      method: 'POST',
+      body: JSON.stringify({ credential, challenge_token: challengeToken }),
+    }),
+  logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST' }),
+  createEnrollmentCode: () =>
+    request<{ code: string; expires_in_seconds: number }>('/api/auth/enrollment-code', { method: 'POST' }),
+  listDevices: () => request<Device[]>('/api/auth/devices'),
+  revokeDevice: (id: number) => request<void>(`/api/auth/devices/${id}`, { method: 'DELETE' }),
 }

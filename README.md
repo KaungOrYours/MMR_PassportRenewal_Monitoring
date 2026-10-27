@@ -41,7 +41,7 @@ GitHub Actions (every 3h, free) -- checker/main.py runs BOTH checks:
 
   Both checks -> write results to Neon Postgres -> send a Telegram alert
 
-Vercel (frontend) <--API key--> Render (FastAPI backend) <--> Neon Postgres
+Vercel (frontend) <--Passkey session cookie--> Render (FastAPI backend) <--> Neon Postgres
 ```
 
 Three independently deployed pieces, one repo:
@@ -51,9 +51,12 @@ Three independently deployed pieces, one repo:
   installs in seconds via `apt-get`; Render's free Python runtime can't
   without switching to Docker.
 - `backend/` -- FastAPI REST API over the same Postgres database, deployed to
-  Render. All routes except `/api/health` require an `X-API-Key` header.
-- `frontend/` -- React + Vite + Tailwind GUI, deployed to Vercel. Four views:
-  Watchlist, Alerts, Lists, Status.
+  Render. `POST /api/watchlist` (self-service signup) and `/api/health` are
+  public; everything else requires a Passkey-authenticated session -- see
+  "Admin access" below.
+- `frontend/` -- React + Vite + Tailwind, deployed to Vercel. `/` is the
+  public signup page; `/admin` is the Passkey-gated dashboard (Watchlist,
+  Alerts, Lists, Status).
 
 ## Setup
 
@@ -111,26 +114,59 @@ Uses `render.yaml` (Blueprint). In Render: New -> Blueprint -> point at this
 repo. Set these env vars when prompted:
 
 - `NEON_DATABASE_URL` -- same as above
-- `API_SECRET` -- a long random string you generate (e.g. `openssl rand -hex 32`)
+- `API_SECRET` -- a long random string (`openssl rand -hex 32`). This is a
+  **one-time bootstrap credential only**, used once to register the first
+  admin device -- see step 7. Never baked into the frontend; type it in by
+  hand during that one ceremony and never use it again afterward.
 - `GH_DISPATCH_TOKEN` -- a GitHub personal access token (fine-grained,
-  `Actions: write` on this repo only) so the GUI's "Check now" button can
-  trigger the workflow
-- `FRONTEND_ORIGIN` -- your Vercel URL, once you have it (comma-separate if
-  more than one)
+  `Actions: write` on this repo only) so the admin dashboard's "Check now"
+  button can trigger the workflow
+- `FRONTEND_ORIGIN` -- your exact Vercel URL (e.g.
+  `https://mmr-passport-renewal-monitoring.vercel.app`). **Required, not
+  optional** -- credentialed cross-origin cookies (used by the Passkey
+  session) do not work with a wildcard CORS origin.
+- `WEBAUTHN_RP_ID` -- your Vercel domain with no scheme/path, e.g.
+  `mmr-passport-renewal-monitoring.vercel.app`
+- `WEBAUTHN_ORIGIN` -- the full origin, e.g.
+  `https://mmr-passport-renewal-monitoring.vercel.app`
 
 ### 6. Frontend -- Vercel
 
 Import the repo, set the project root to `frontend/`, and set env vars:
 
 - `VITE_API_BASE` -- your Render backend URL
-- `VITE_API_KEY` -- same value as `API_SECRET` above
 
-**Note on the security model:** per your choice, there is no login -- the
-site is protected only by the API key baked into the frontend bundle and by
-the URL being unguessable ("secret URL"). Anyone who finds the Vercel URL can
-read the page source and extract the API key. This is fine for a low-stakes
-personal tool, but understand it is not a real access control: if you ever
-want a password gate, say so and it can be added to the backend.
+That's the only one needed. There is no `VITE_API_KEY` -- nothing secret is
+baked into the frontend bundle anymore (see step 7).
+
+### 7. Admin access -- Passkey (Face ID / Touch ID) login
+
+The site has two parts:
+
+- **Public signup** (`/`) -- open to anyone with the link, no login. Lets
+  someone add their own name/passport/Telegram ID to get notified.
+- **Admin dashboard** (`/admin`) -- everything else (viewing the full
+  watchlist, Alerts, Lists, Status, triggering checks). Gated by a Passkey
+  login: no username or password, your device's Face ID/Touch ID key pair
+  **is** the credential. There is no standing API key for this -- a stolen
+  URL or a read of the public bundle gets an attacker nothing.
+
+One-time setup, right after the backend is deployed with the env vars above:
+
+1. Open `https://<your-vercel-domain>/admin` on your **first** device (e.g.
+   MacBook). Since no device is registered yet, it asks for the one-time
+   setup code -- enter the `API_SECRET` value from step 5, give the device a
+   label, and complete the Touch ID prompt. You're now logged in, and that
+   `API_SECRET` value is permanently useless afterward (bootstrap closes the
+   moment one device exists).
+2. On the **Status** tab, click **"Generate code to add another device"** --
+   it shows a code valid for 10 minutes.
+3. Open `/admin` on your **second** device (e.g. iPhone), expand "Registering
+   a new device?", enter that code and a label, complete the Face ID prompt.
+
+From then on, each device just does **"Log in with Passkey"** -- no code
+needed. Lost a device? Revoke it from the Status tab on another logged-in
+device.
 
 ## Local development
 
@@ -144,11 +180,13 @@ pytest tests/ -v
 # backend
 source .venv/bin/activate && pip install -r backend/requirements.txt
 NEON_DATABASE_URL="sqlite:////tmp/dev.db" API_SECRET="dev" \
+  FRONTEND_ORIGIN="http://localhost:5173" \
+  WEBAUTHN_RP_ID="localhost" WEBAUTHN_ORIGIN="http://localhost:5173" \
   uvicorn backend.main:app --reload
 
 # frontend
 cd frontend && npm install
-cp .env.example .env.local   # fill in VITE_API_BASE / VITE_API_KEY
+cp .env.example .env.local   # fill in VITE_API_BASE
 npm run dev
 ```
 

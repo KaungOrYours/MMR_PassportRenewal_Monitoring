@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Snapshot } from '../api'
+import { api, type Device, type Snapshot } from '../api'
 
 const SOURCE_LABELS: Record<string, string> = {
   embassy_pdf: 'Website PDF (Lost & Seaman/Offshore)',
@@ -16,6 +16,9 @@ export default function StatusView() {
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'down'>('checking')
   const [dispatching, setDispatching] = useState(false)
   const [dispatchMsg, setDispatchMsg] = useState('')
+  const [devices, setDevices] = useState<Device[]>([])
+  const [enrollmentCode, setEnrollmentCode] = useState('')
+  const [codeError, setCodeError] = useState('')
 
   const load = () => {
     api
@@ -23,9 +26,36 @@ export default function StatusView() {
       .then(() => setApiStatus('ok'))
       .catch(() => setApiStatus('down'))
     api.listSnapshots().then(setSnapshots).catch(() => {})
+    api.listDevices().then(setDevices).catch(() => {})
   }
 
   useEffect(load, [])
+
+  const generateCode = async () => {
+    setCodeError('')
+    setEnrollmentCode('')
+    try {
+      const { code } = await api.createEnrollmentCode()
+      setEnrollmentCode(code)
+    } catch (e) {
+      setCodeError(String(e))
+    }
+  }
+
+  const revoke = async (id: number) => {
+    if (!confirm('Revoke this device? It will need to be re-registered to regain access.')) return
+    try {
+      await api.revokeDevice(id)
+      setDevices((prev) => prev.filter((d) => d.id !== id))
+    } catch (e) {
+      setCodeError(String(e))
+    }
+  }
+
+  const logout = async () => {
+    await api.logout()
+    window.location.reload()
+  }
 
   const latestBySource = Object.keys(SOURCE_LABELS).map((source) => ({
     source,
@@ -91,6 +121,47 @@ export default function StatusView() {
           {dispatching ? 'Dispatching...' : 'Check now'}
         </button>
         {dispatchMsg && <p className="text-sm text-neutral-500">{dispatchMsg}</p>}
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">Admin access</h3>
+          <button onClick={logout} className="text-xs text-red-600 hover:underline">
+            Log out
+          </button>
+        </div>
+
+        <div className="space-y-1">
+          {devices.map((d) => (
+            <div key={d.id} className="flex items-center justify-between text-sm">
+              <span>
+                {d.device_label || 'Unnamed device'}{' '}
+                <span className="text-neutral-400 text-xs">— added {new Date(d.created_at).toLocaleDateString()}</span>
+              </span>
+              <button
+                onClick={() => revoke(d.id)}
+                disabled={devices.length <= 1}
+                className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                title={devices.length <= 1 ? "Can't remove your only device" : 'Revoke this device'}
+              >
+                Revoke
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-neutral-200 dark:border-neutral-800 pt-3">
+          <button onClick={generateCode} className="rounded bg-neutral-700 px-3 py-1.5 text-white text-xs">
+            Generate code to add another device
+          </button>
+          {enrollmentCode && (
+            <p className="mt-2 text-sm">
+              Code: <span className="font-mono font-semibold">{enrollmentCode}</span>{' '}
+              <span className="text-xs text-neutral-500">— valid 10 minutes, enter it on your other device's login screen</span>
+            </p>
+          )}
+          {codeError && <p className="mt-2 text-xs text-red-600">{codeError}</p>}
+        </div>
       </div>
     </div>
   )

@@ -18,3 +18,7 @@ services:
         value: KaungOrYours/MMR_PassportRenewal_Monitoring
       - key: FRONTEND_ORIGIN
         sync: false
+      - key: WEBAUTHN_RP_ID
+        sync: false
+      - key: WEBAUTHN_ORIGIN
+        sync: false

@@ -8,29 +8,27 @@ from sqlalchemy.orm import Session
 
 from checker import db as models
 
-from .auth import require_api_key
+from .auth import get_db, require_session
 from .schemas import (
     EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut,
     WatchlistUpdate, mask_passport, mask_telegram_id,
 )
+from .webauthn_routes import router as webauthn_router
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
 
-origins = os.environ.get("FRONTEND_ORIGIN", "*")
+# credentialed cross-origin cookies require an explicit origin list --
+# CORS forbids combining a wildcard origin with allow_credentials
+origins = [o.strip() for o in os.environ.get("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in origins.split(",")],
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-def get_db():
-    session = models.get_session()
-    try:
-        yield session
-    finally:
-        session.close()
+app.include_router(webauthn_router)
 
 
 @app.get("/api/health")
@@ -39,9 +37,10 @@ def health():
 
 
 def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
-    # the API key gating this endpoint lives in the public frontend bundle,
-    # so the server must not hand back the full number -- UI-only masking
-    # is bypassable by anyone who reads the key out of the bundle
+    # the server must not hand back full passport/Telegram numbers --
+    # UI-only masking is meaningless once a real login gate exists, but
+    # keeping it server-side too costs nothing and limits what a stolen
+    # session cookie alone would expose
     return WatchlistOut(
         id=entry.id, full_name=entry.full_name, passport_no=mask_passport(entry.passport_no),
         telegram_chat_id=mask_telegram_id(entry.telegram_chat_id),
@@ -49,14 +48,17 @@ def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
     )
 
 
-@app.get("/api/watchlist", response_model=list[WatchlistOut], dependencies=[Depends(require_api_key)])
+@app.get("/api/watchlist", response_model=list[WatchlistOut], dependencies=[Depends(require_session)])
 def list_watchlist(session: Session = Depends(get_db)):
     rows = session.query(models.Watchlist).order_by(models.Watchlist.created_at.desc()).all()
     return [_to_watchlist_out(w) for w in rows]
 
 
-@app.post("/api/watchlist", response_model=WatchlistOut, dependencies=[Depends(require_api_key)])
+@app.post("/api/watchlist", response_model=WatchlistOut)
 def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
+    # intentionally public, no session required -- this is the self-service
+    # signup anyone with the link can use to add themselves and get
+    # notified; only VIEWING/managing the list requires the admin login
     entry = models.Watchlist(
         full_name=payload.full_name, passport_no=payload.passport_no,
         telegram_chat_id=payload.telegram_chat_id, note=payload.note,
@@ -67,7 +69,7 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     return _to_watchlist_out(entry)
 
 
-@app.patch("/api/watchlist/{entry_id}", response_model=WatchlistOut, dependencies=[Depends(require_api_key)])
+@app.patch("/api/watchlist/{entry_id}", response_model=WatchlistOut, dependencies=[Depends(require_session)])
 def update_watchlist(entry_id: int, payload: WatchlistUpdate, session: Session = Depends(get_db)):
     entry = session.get(models.Watchlist, entry_id)
     if entry is None:
@@ -79,7 +81,7 @@ def update_watchlist(entry_id: int, payload: WatchlistUpdate, session: Session =
     return _to_watchlist_out(entry)
 
 
-@app.delete("/api/watchlist/{entry_id}", status_code=204, dependencies=[Depends(require_api_key)])
+@app.delete("/api/watchlist/{entry_id}", status_code=204, dependencies=[Depends(require_session)])
 def delete_watchlist(entry_id: int, session: Session = Depends(get_db)):
     entry = session.get(models.Watchlist, entry_id)
     if entry is None:
@@ -88,7 +90,7 @@ def delete_watchlist(entry_id: int, session: Session = Depends(get_db)):
     session.commit()
 
 
-@app.get("/api/matches", response_model=list[MatchOut], dependencies=[Depends(require_api_key)])
+@app.get("/api/matches", response_model=list[MatchOut], dependencies=[Depends(require_session)])
 def list_matches(session: Session = Depends(get_db)):
     rows = session.query(models.MatchRecord).order_by(models.MatchRecord.created_at.desc()).all()
     out = []
@@ -103,7 +105,7 @@ def list_matches(session: Session = Depends(get_db)):
     return out
 
 
-@app.delete("/api/matches/{match_id}", status_code=204, dependencies=[Depends(require_api_key)])
+@app.delete("/api/matches/{match_id}", status_code=204, dependencies=[Depends(require_session)])
 def dismiss_match(match_id: int, session: Session = Depends(get_db)):
     match = session.get(models.MatchRecord, match_id)
     if match is None:
@@ -112,17 +114,17 @@ def dismiss_match(match_id: int, session: Session = Depends(get_db)):
     session.commit()
 
 
-@app.get("/api/snapshots", response_model=list[SnapshotOut], dependencies=[Depends(require_api_key)])
+@app.get("/api/snapshots", response_model=list[SnapshotOut], dependencies=[Depends(require_session)])
 def list_snapshots(session: Session = Depends(get_db)):
     return session.query(models.Snapshot).order_by(models.Snapshot.fetched_at.desc()).all()
 
 
-@app.get("/api/extraction-issues", response_model=list[ExtractionIssueOut], dependencies=[Depends(require_api_key)])
+@app.get("/api/extraction-issues", response_model=list[ExtractionIssueOut], dependencies=[Depends(require_session)])
 def list_extraction_issues(session: Session = Depends(get_db)):
     return session.query(models.ExtractionIssue).order_by(models.ExtractionIssue.id.desc()).all()
 
 
-@app.get("/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut], dependencies=[Depends(require_api_key)])
+@app.get("/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut], dependencies=[Depends(require_session)])
 def snapshot_entries(snapshot_id: int, q: str = Query(default=""), session: Session = Depends(get_db)):
     query = session.query(models.Entry).filter_by(snapshot_id=snapshot_id)
     if q:
@@ -131,7 +133,7 @@ def snapshot_entries(snapshot_id: int, q: str = Query(default=""), session: Sess
     return query.order_by(models.Entry.page_no, models.Entry.id).all()
 
 
-@app.get("/api/entries/search", response_model=list[EntrySearchResult], dependencies=[Depends(require_api_key)])
+@app.get("/api/entries/search", response_model=list[EntrySearchResult], dependencies=[Depends(require_session)])
 def search_entries(q: str = Query(min_length=2), limit: int = Query(default=200, le=500), session: Session = Depends(get_db)):
     """Searches every entry ever recorded, across all snapshots/sources."""
     like = f"%{q.upper()}%"
@@ -153,7 +155,7 @@ def search_entries(q: str = Query(min_length=2), limit: int = Query(default=200,
     ]
 
 
-@app.post("/api/check-now", dependencies=[Depends(require_api_key)])
+@app.post("/api/check-now", dependencies=[Depends(require_session)])
 def check_now():
     token = os.environ.get("GH_DISPATCH_TOKEN")
     repo = os.environ.get("GH_REPO", "KaungOrYours/MMR_PassportRenewal_Monitoring")
