@@ -26,16 +26,19 @@ GitHub Actions (every 3h, free) -- checker/main.py runs BOTH checks:
       -> extract text (pdftotext) or OCR (tesseract, for scanned PDFs)
       -> parse rows, anchored on passport/ID number, with an integrity check
          that re-OCRs any page where rows were silently dropped
-      -> match against the watchlist -- BOTH passport number and fuzzy name
-         must match; a hit on only one is not reported at all (too ambiguous
-         to alert on: a shared common name, or a passport-only coincidence)
+      -> match against the watchlist -- the passport number is the
+         authoritative identifier; a name hit alone is never sufficient
+         (two people can share a name), but a passport hit alone IS
+         reported even if the name didn't match, since OCR mangles names
+         often enough that requiring both would turn a real match into a
+         missed notification
 
   [2] telegram_renewal check
       -> Telethon (Telegram client API, full-resolution photos) fetches new
          posts from @mesg15 since the last processed message id
       -> OCR each photo (tesseract), parse the PV/PJ table format, same
          integrity-check-and-retry pattern as [1]
-      -> match against the watchlist, same both-must-match rule -- passport
+      -> match against the watchlist, same passport-is-authoritative rule --
          matching checks the visible first/last 2 of 6 digits plus the
          letters, since the channel redacts the middle 2 digits for privacy
 

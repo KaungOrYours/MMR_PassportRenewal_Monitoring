@@ -11,7 +11,15 @@ def _call(method: str, **params) -> dict:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     url = TELEGRAM_API.format(token=token, method=method)
     resp = requests.post(url, data=params, timeout=TIMEOUT)
-    resp.raise_for_status()
+    if not resp.ok:
+        # surface Telegram's actual reason (e.g. "Bad Request: chat not
+        # found", "Forbidden: bot was blocked by the user") instead of a
+        # generic "400 Client Error" that hides why it really failed
+        try:
+            description = resp.json().get("description", resp.text)
+        except ValueError:
+            description = resp.text
+        raise RuntimeError(f"Telegram API error ({resp.status_code}): {description}")
     return resp.json()
 
 

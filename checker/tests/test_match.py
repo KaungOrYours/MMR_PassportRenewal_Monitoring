@@ -44,17 +44,23 @@ def test_genuine_ocr_typo_still_matches():
     assert m.confidence == "high"
 
 
-def test_passport_only_match_is_not_reported():
-    """Policy: both name and passport must match -- a passport hit alone
-    (e.g. a data-entry error, or someone else entirely) is not alerted on."""
+def test_passport_match_alone_is_sufficient():
+    """Policy: the passport number is the authoritative identifier. OCR
+    mangles names often enough that requiring a name match too would turn
+    real matches into missed notifications -- a passport hit alone is
+    reported (as "passport", not "name+passport", so it's still visible
+    which signal(s) actually matched)."""
     entry = WatchlistEntry(id=1, full_name="Kaung Htet", passport_no="MF123456")
-    row = _row("COMPLETELY DIFFERENT PERSON", passport="MF123456")
-    assert match_row(entry, row) is None
+    row = _row("BADLY OCRD NAME XYZ", passport="MF123456")
+    m = match_row(entry, row)
+    assert m is not None
+    assert m.confidence == "high"
+    assert m.matched_on == "passport"
 
 
 def test_name_only_match_is_not_reported():
-    """Policy: a name hit alone (even an exact one -- two different people
-    can share a name) is not alerted on without a confirming passport match."""
+    """A name hit alone (even an exact one -- two different people can share
+    a name) is never sufficient without a matching passport number."""
     entry = WatchlistEntry(id=1, full_name="Kaung Htet", passport_no="MF123456")
     row = _row("KAUNG HTET", passport="ZZ999999")
     assert match_row(entry, row) is None

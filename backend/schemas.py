@@ -75,6 +75,11 @@ class WatchlistOut(BaseModel):
     active: bool
     lookup_token: str | None
     created_at: datetime
+    # only populated by POST /api/watchlist, so the signup form can tell the
+    # user whether their confirmation message actually sent -- None on
+    # every other response (GET/PATCH), where it's not relevant
+    telegram_sent: bool | None = None
+    telegram_error: str | None = None
 
     class Config:
         from_attributes = True

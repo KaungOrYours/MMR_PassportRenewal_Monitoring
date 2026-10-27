@@ -11,6 +11,9 @@ export interface Watchlist {
   active: boolean
   lookup_token: string | null
   created_at: string
+  // only set on the response from createWatchlist
+  telegram_sent: boolean | null
+  telegram_error: string | null
 }
 
 export interface PublicStatus {

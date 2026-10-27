@@ -41,7 +41,9 @@ def health():
     return {"status": "ok"}
 
 
-def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
+def _to_watchlist_out(
+    entry: models.Watchlist, telegram_sent: bool | None = None, telegram_error: str | None = None,
+) -> WatchlistOut:
     # the server must not hand back full passport/Telegram numbers --
     # UI-only masking is meaningless once a real login gate exists, but
     # keeping it server-side too costs nothing and limits what a stolen
@@ -50,7 +52,20 @@ def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
         id=entry.id, full_name=entry.full_name, passport_no=mask_passport(entry.passport_no),
         telegram_chat_id=mask_telegram_id(entry.telegram_chat_id),
         note=entry.note, active=entry.active, lookup_token=entry.lookup_token, created_at=entry.created_at,
+        telegram_sent=telegram_sent, telegram_error=telegram_error,
     )
+
+
+def _try_send(text: str, chat_id: str) -> tuple[bool, str | None]:
+    """Best-effort Telegram send -- a bad chat id or missing bot config must
+    never block the signup itself, but the caller still needs to know
+    whether it actually worked so the frontend can tell the user."""
+    try:
+        send_message(text, chat_id=chat_id)
+        return True, None
+    except Exception as e:
+        log.exception("Failed to send Telegram message")
+        return False, str(e)
 
 
 @app.get("/api/watchlist", response_model=list[WatchlistOut], dependencies=[Depends(require_session)])
@@ -94,16 +109,14 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
         session.commit()
         session.refresh(existing)
 
+        telegram_sent = telegram_error = None
         if existing.telegram_chat_id:
-            try:
-                send_message(
-                    f"👋 Welcome back, {existing.full_name} — you're already registered.\n\n"
-                    f"Check your status anytime: {_status_url(existing.lookup_token)}",
-                    chat_id=existing.telegram_chat_id,
-                )
-            except Exception:
-                log.exception("Failed to send welcome-back message to Telegram")
-        return _to_watchlist_out(existing)
+            telegram_sent, telegram_error = _try_send(
+                f"👋 Welcome back, {existing.full_name} — you're already registered.\n\n"
+                f"Check your status anytime: {_status_url(existing.lookup_token)}",
+                chat_id=existing.telegram_chat_id,
+            )
+        return _to_watchlist_out(existing, telegram_sent, telegram_error)
 
     token = secrets.token_urlsafe(16)
     entry = models.Watchlist(
@@ -114,21 +127,17 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     session.commit()
     session.refresh(entry)
 
+    telegram_sent = telegram_error = None
     if payload.telegram_chat_id:
-        try:
-            send_message(
-                f"👋 Hi {payload.full_name}, you're now registered with the MMR Passport Renewal Monitor.\n\n"
-                f"You are not on the embassy's list yet. The moment your name and passport number appear on "
-                f"either the approval list or a renewal appointment post, we'll notify you right here in this "
-                f"chat.\n\nCheck your status anytime: {_status_url(token)}",
-                chat_id=payload.telegram_chat_id,
-            )
-        except Exception:
-            # best-effort -- a bad chat id or missing bot config must never
-            # block the signup itself
-            log.exception("Failed to send signup confirmation to Telegram")
+        telegram_sent, telegram_error = _try_send(
+            f"👋 Hi {payload.full_name}, you're now registered with the MMR Passport Renewal Monitor.\n\n"
+            f"You are not on the embassy's list yet. The moment your name and passport number appear on "
+            f"either the approval list or a renewal appointment post, we'll notify you right here in this "
+            f"chat.\n\nCheck your status anytime: {_status_url(token)}",
+            chat_id=payload.telegram_chat_id,
+        )
 
-    return _to_watchlist_out(entry)
+    return _to_watchlist_out(entry, telegram_sent, telegram_error)
 
 
 @app.get("/api/public/stats", response_model=PublicStats)

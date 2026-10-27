@@ -1,10 +1,12 @@
 """Match parsed approval-list rows against the watchlist.
 
-Passport/ID numbers are the strong signal (unique, and OCR-correctable via a
-confusable-character fold); names are a supporting signal since common
-Burmese names repeat across the list. A match is "high" confidence when both
-agree, "medium" when only one does -- both are reported, but labelled, so
-false positives are easy to eyeball rather than silently trusted.
+Matching relies on the passport/ID number alone. Names are OCR'd from
+scanned images and are too failure-prone to gate a match on -- a genuine
+match can have a mangled name (a dropped letter, a misread character) while
+the passport number still reads correctly, and requiring both would turn
+that into a missed notification instead of a successful one. The passport
+number is the authoritative unique identifier; the name is kept only as an
+informational field on the match (matched_on/score), not a requirement.
 """
 import re
 from dataclasses import dataclass
@@ -68,19 +70,14 @@ def _name_matches(watch_name: str, row_name: str) -> tuple[bool, int]:
 
 
 def match_row(entry: WatchlistEntry, row: Row) -> Match | None:
-    # both signals are required -- a name-only or passport-only hit is not
-    # reported at all, per explicit instruction: ambiguous single-signal
-    # matches (e.g. a shared common name, or a coincidental digit overlap)
-    # are not worth alerting on.
     passport_match = (
         entry.passport_no is not None
         and fold_confusables(entry.passport_no) == fold_confusables(row.passport_no)
     )
+    if not passport_match:
+        return None
     name_match, name_score = _name_matches(entry.full_name, row.name)
-
-    if passport_match and name_match:
-        return Match(entry.id, row, "high", "name+passport", name_score)
-    return None
+    return Match(entry.id, row, "high", "name+passport" if name_match else "passport", name_score)
 
 
 def find_matches(watchlist: list[WatchlistEntry], rows: list[Row]) -> list[Match]:
@@ -122,13 +119,12 @@ def masked_passport_matches(full_passport: str, masked: str) -> bool:
 
 
 def match_renewal_row(entry: WatchlistEntry, row: RenewalRow) -> RenewalMatch | None:
-    # both signals required, same reasoning as match_row above
+    # same reasoning as match_row above -- passport alone is sufficient
     passport_match = entry.passport_no is not None and masked_passport_matches(entry.passport_no, row.masked_passport)
+    if not passport_match:
+        return None
     name_match, name_score = _name_matches(entry.full_name, row.name)
-
-    if passport_match and name_match:
-        return RenewalMatch(entry.id, row, "high", "name+passport", name_score)
-    return None
+    return RenewalMatch(entry.id, row, "high", "name+passport" if name_match else "passport", name_score)
 
 
 def find_renewal_matches(watchlist: list[WatchlistEntry], rows: list[RenewalRow]) -> list[RenewalMatch]:

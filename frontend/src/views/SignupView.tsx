@@ -18,6 +18,8 @@ export default function SignupView() {
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
   const [statusLink, setStatusLink] = useState('')
+  const [telegramSent, setTelegramSent] = useState<boolean | null>(null)
+  const [telegramError, setTelegramError] = useState('')
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,6 +36,8 @@ export default function SignupView() {
       if (created.lookup_token) {
         setStatusLink(`${window.location.origin}/status/${created.lookup_token}`)
       }
+      setTelegramSent(created.telegram_sent)
+      setTelegramError(created.telegram_error || '')
       setDone(true)
     } catch (e) {
       setError(String(e))
@@ -51,6 +55,22 @@ export default function SignupView() {
             We'll check the embassy's lists automatically and message you on Telegram if your name and passport
             number appear.
           </p>
+          {telegramSent === true && (
+            <p className="text-xs text-green-700 dark:text-green-300">
+              ✅ A confirmation message was sent to your Telegram — check your chat with the bot.
+            </p>
+          )}
+          {telegramSent === false && (
+            <div className="rounded bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-2 text-xs text-amber-800 dark:text-amber-200">
+              ⚠️ We couldn't send you a Telegram message{telegramError ? `: ${telegramError}` : ''}.<br />
+              Make sure you've messaged <strong>@MMR_PassportRenewalMonitoringBot</strong> on Telegram first (send
+              it <code>/start</code>), and that your Telegram ID is correct — get it from{' '}
+              <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" className="underline">
+                @userinfobot
+              </a>
+              . You're still on the list either way; you can check your status with the link below.
+            </div>
+          )}
           {statusLink && (
             <div className="rounded bg-white dark:bg-neutral-900 border border-green-200 dark:border-green-800 p-2">
               <p className="text-xs text-neutral-500 mb-1">Bookmark this link to check your status anytime:</p>
@@ -64,6 +84,8 @@ export default function SignupView() {
               setForm(emptyForm)
               setDone(false)
               setStatusLink('')
+              setTelegramSent(null)
+              setTelegramError('')
             }}
             className="text-sm text-blue-600 hover:underline"
           >
