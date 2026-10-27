@@ -115,18 +115,25 @@ export default function SignupView() {
           </div>
           <div>
             <label className="block text-xs text-neutral-500 mb-1">Your Telegram ID</label>
-            <input
-              className="w-full rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
-              placeholder="e.g. 123456789"
-              value={form.telegram_chat_id}
-              onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })}
-            />
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
+                placeholder="e.g. 123456789"
+                value={form.telegram_chat_id}
+                onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })}
+              />
+              <a
+                href="https://t.me/MMR_PassportRenewalMonitoringBot?start=1"
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 rounded bg-sky-500 px-3 py-2 text-white text-sm hover:bg-sky-600"
+              >
+                Connect Telegram
+              </a>
+            </div>
             <p className="mt-1 text-xs text-neutral-500">
-              Message{' '}
-              <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                @userinfobot
-              </a>{' '}
-              on Telegram — it replies instantly with your ID. We'll message you there, nowhere else.
+              Tap "Connect Telegram", then tap <strong>Start</strong> in the chat that opens — our bot replies
+              instantly with your ID (tap it to copy), paste it above. We'll only message you there, nowhere else.
             </p>
           </div>
           <div>

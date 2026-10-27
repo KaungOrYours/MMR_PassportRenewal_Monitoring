@@ -16,6 +16,7 @@ from .schemas import (
     EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut, PublicStats, PublicStatusOut,
     SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, mask_name, mask_passport, mask_telegram_id,
 )
+from .telegram_webhook import router as telegram_router
 from .webauthn_routes import router as webauthn_router
 
 log = logging.getLogger("uvicorn.error")
@@ -34,6 +35,30 @@ app.add_middleware(
 )
 
 app.include_router(webauthn_router)
+app.include_router(telegram_router)
+
+
+@app.on_event("startup")
+def _register_telegram_webhook() -> None:
+    # self-registers on every boot so there's no manual setWebhook step --
+    # reuses API_SECRET as the webhook's verification secret rather than
+    # adding yet another env var
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    public_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("BACKEND_PUBLIC_URL")
+    api_secret = os.environ.get("API_SECRET")
+    if not (bot_token and public_url and api_secret):
+        log.warning("Skipping Telegram webhook registration (missing TELEGRAM_BOT_TOKEN/RENDER_EXTERNAL_URL/API_SECRET)")
+        return
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/setWebhook",
+            json={"url": f"{public_url.rstrip('/')}/api/telegram/webhook", "secret_token": api_secret},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        log.info("Telegram webhook registration: %s", resp.json())
+    except Exception:
+        log.exception("Failed to register Telegram webhook")
 
 
 @app.get("/api/health")

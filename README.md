@@ -70,6 +70,20 @@ the bot token via @BotFather** before deploying -- the original token was
 shared in plaintext during setup. Message the bot `/start` once to register
 your chat; the chat ID is already captured as `REDACTED_OPERATOR_TELEGRAM_CHAT_ID`.
 
+The backend also needs `TELEGRAM_BOT_TOKEN` set on **Render** (separate from
+the GitHub Actions secret above -- this is a different runtime) so the
+signup confirmation messages and the webhook below can actually send.
+
+On every boot, the backend self-registers a Telegram webhook
+(`backend/telegram_webhook.py`) pointing at its own `RENDER_EXTERNAL_URL`
+(set automatically by Render, no action needed), secured with `API_SECRET`
+as the verification token. This is what makes the signup form's "Connect
+Telegram" button work: tapping it opens a chat with the bot, the user taps
+Start, and the bot immediately replies with their chat ID (or, if they're
+already registered, a welcome-back message with their status link) --
+without this, Telegram's Bot API has no way to message someone who hasn't
+started a conversation with the bot first, so this closes that gap.
+
 ### 2. Database -- Neon Postgres
 
 1. Create a free project at https://neon.tech
