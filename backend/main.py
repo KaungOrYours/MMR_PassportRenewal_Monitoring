@@ -82,7 +82,18 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     if existing is not None:
         if not existing.lookup_token:
             existing.lookup_token = secrets.token_urlsafe(16)
-            session.commit()
+        # fill in anything the existing record was missing (e.g. an
+        # admin-created entry that predates the Telegram ID field) rather
+        # than silently ignoring newly-submitted details
+        if payload.telegram_chat_id and not existing.telegram_chat_id:
+            existing.telegram_chat_id = payload.telegram_chat_id
+        if payload.passport_no and not existing.passport_no:
+            existing.passport_no = payload.passport_no
+        if payload.note and not existing.note:
+            existing.note = payload.note
+        session.commit()
+        session.refresh(existing)
+
         if existing.telegram_chat_id:
             try:
                 send_message(
