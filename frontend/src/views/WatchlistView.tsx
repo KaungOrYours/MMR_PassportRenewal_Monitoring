@@ -16,7 +16,7 @@ function maskPassport(passport: string): string {
   if (!m) return compact
   const [, letters, digits] = m
   if (digits.length < 4) return `${letters}${digits}`
-  return `${letters}${digits.slice(0, 2)}**${digits.slice(-2)}`
+  return `${letters}${digits.slice(0, 1)}***${digits.slice(-2)}`
 }
 
 export default function WatchlistView() {
@@ -25,7 +25,6 @@ export default function WatchlistView() {
   const [error, setError] = useState('')
   const [form, setForm] = useState({ full_name: '', passport_no: '', note: '' })
   const [submitting, setSubmitting] = useState(false)
-  const [revealed, setRevealed] = useState<Set<number>>(new Set())
 
   const load = () => {
     setLoading(true)
@@ -60,15 +59,6 @@ export default function WatchlistView() {
   const toggleActive = async (w: Watchlist) => {
     await api.updateWatchlist(w.id, { active: !w.active })
     load()
-  }
-
-  const toggleReveal = (id: number) => {
-    setRevealed((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
   }
 
   return (
@@ -121,17 +111,7 @@ export default function WatchlistView() {
                 <tr key={w.id} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-3 py-2 font-medium">{w.full_name}</td>
                   <td className="px-3 py-2 font-mono">
-                    {w.passport_no ? (
-                      <button
-                        onClick={() => toggleReveal(w.id)}
-                        className="hover:underline"
-                        title={revealed.has(w.id) ? 'Click to hide' : 'Click to reveal'}
-                      >
-                        {revealed.has(w.id) ? w.passport_no : maskPassport(w.passport_no)}
-                      </button>
-                    ) : (
-                      '—'
-                    )}
+                    {w.passport_no ? maskPassport(w.passport_no) : '—'}
                   </td>
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
                   <td className="px-3 py-2">
@@ -143,7 +123,7 @@ export default function WatchlistView() {
                           : 'bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
                       }`}
                     >
-                      {w.active ? 'Active' : 'Paused'}
+                      {w.active ? 'Active' : 'Waiting'}
                     </button>
                   </td>
                 </tr>
