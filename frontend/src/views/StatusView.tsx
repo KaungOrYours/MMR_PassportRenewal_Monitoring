@@ -59,6 +59,13 @@ export default function StatusView() {
     window.location.reload()
   }
 
+  const logoutAll = async () => {
+    if (!confirm('Log out every device, including this one? Each will need to log in again with its Passkey.')) return
+    await api.logoutAll()
+    clearSessionToken()
+    window.location.reload()
+  }
+
   const latestBySource = Object.keys(SOURCE_LABELS).map((source) => ({
     source,
     label: SOURCE_LABELS[source],
@@ -128,9 +135,18 @@ export default function StatusView() {
       <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">Admin access</h3>
-          <button onClick={logout} className="text-xs text-red-600 hover:underline">
-            Log out
-          </button>
+          <div className="flex gap-3">
+            <button onClick={logout} className="text-xs text-red-600 hover:underline">
+              Log out
+            </button>
+            <button
+              onClick={logoutAll}
+              className="text-xs text-red-600 hover:underline"
+              title="Invalidate every logged-in session on every device -- use if a session token may have leaked"
+            >
+              Log out all devices
+            </button>
+          </div>
         </div>
 
         <div className="space-y-1">

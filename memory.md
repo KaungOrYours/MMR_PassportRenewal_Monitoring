@@ -126,6 +126,21 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
   indefinitely, not a one-time risk. `backend/auth.py::webhook_secret()`
   falls back to `API_SECRET` when the new var is unset, so existing
   deployments keep working until it's added on Render (see README).
+- **Rate limiting (`backend/ratelimit.py`) is a plain in-process dict, not
+  Redis-backed.** Matches how this is actually deployed: a single Render
+  web-service instance, no `--workers`, so one process sees every request
+  and nothing goes stale across instances. Applied to `POST /api/watchlist`
+  (public signup) and the WebAuthn register/login endpoints -- the
+  unauthenticated or security-sensitive ones worth slowing down for a
+  script without inconveniencing a human. Keys on `X-Forwarded-For`, not
+  `request.client.host`, since Render's edge proxy means the latter is the
+  proxy's own address for every request, not the real caller's.
+- **`POST /api/auth/logout-all` exists because revoking a Passkey device
+  does not retroactively invalidate sessions already issued from it** --
+  `AdminSession` isn't tied to a `credential_id`, so a leaked bearer token
+  would otherwise stay valid for its full 30-day TTL even after the device
+  that created it is revoked. This endpoint deletes every session row, the
+  only way to kill a suspected-leaked token immediately.
 - **Full names are stored and shown in ALL CAPS**, matching how names appear
   on Myanmar passports and on the embassy's own lists (avoids a mismatch
   between "as entered" casing and "as displayed on official documents").

@@ -15,6 +15,7 @@ from checker.match import names_plausibly_match
 from checker.notify import send_message
 
 from .auth import get_db, require_session, webhook_secret
+from .ratelimit import rate_limit
 from .schemas import (
     EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut, PublicStats, PublicStatusOut,
     SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, mask_name, mask_passport, mask_telegram_id,
@@ -109,7 +110,10 @@ def _status_url(token: str) -> str:
     return f"{base}/status/{token}" if base else f"/status/{token}"
 
 
-@app.post("/api/watchlist", response_model=WatchlistOut)
+@app.post(
+    "/api/watchlist", response_model=WatchlistOut,
+    dependencies=[Depends(rate_limit("signup", limit=5, window_seconds=600))],
+)
 def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     # intentionally public, no session required -- this is the self-service
     # signup anyone with the link can use to add themselves and get

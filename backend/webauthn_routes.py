@@ -34,6 +34,7 @@ from webauthn.helpers.structs import (
 from checker import db as models
 
 from .auth import create_session, get_db, get_session_row, not_expired, require_session, utcnow
+from .ratelimit import rate_limit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -61,7 +62,7 @@ class RegisterBeginRequest(BaseModel):
     enrollment_code: str | None = None
 
 
-@router.post("/register/begin")
+@router.post("/register/begin", dependencies=[Depends(rate_limit("register-begin", limit=10, window_seconds=600))])
 def register_begin(
     payload: RegisterBeginRequest,
     x_api_key: str = Header(default=""),
@@ -150,7 +151,7 @@ def register_complete(payload: RegisterCompleteRequest, db: Session = Depends(ge
     return {"status": "registered", "session_token": token}
 
 
-@router.post("/login/begin")
+@router.post("/login/begin", dependencies=[Depends(rate_limit("login-begin", limit=20, window_seconds=600))])
 def login_begin(db: Session = Depends(get_db)):
     _require_webauthn_config()
     creds = db.query(models.WebAuthnCredential).all()
@@ -177,7 +178,7 @@ class LoginCompleteRequest(BaseModel):
     challenge_token: str
 
 
-@router.post("/login/complete")
+@router.post("/login/complete", dependencies=[Depends(rate_limit("login-complete", limit=20, window_seconds=600))])
 def login_complete(payload: LoginCompleteRequest, db: Session = Depends(get_db)):
     _require_webauthn_config()
     challenge_row = db.get(models.WebAuthnChallenge, payload.challenge_token)
@@ -221,6 +222,18 @@ def logout(authorization: str | None = Header(default=None), db: Session = Depen
         db.delete(row)
         db.commit()
     return {"status": "logged_out"}
+
+
+@router.post("/logout-all", dependencies=[Depends(require_session)])
+def logout_all(db: Session = Depends(get_db)):
+    """Invalidates every admin session, not just the caller's own -- the
+    only way to kill a leaked bearer token before its 30-day TTL expires,
+    since revoking a Passkey credential does not retroactively invalidate
+    sessions already issued from it (AdminSession isn't tied to a specific
+    credential_id)."""
+    db.query(models.AdminSession).delete()
+    db.commit()
+    return {"status": "logged_out_all"}
 
 
 @router.post("/enrollment-code", dependencies=[Depends(require_session)])

@@ -151,6 +151,7 @@ export const api = {
       body: JSON.stringify({ credential, challenge_token: challengeToken }),
     }),
   logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST' }),
+  logoutAll: () => request<{ status: string }>('/api/auth/logout-all', { method: 'POST' }),
   createEnrollmentCode: () =>
     request<{ code: string; expires_in_seconds: number }>('/api/auth/enrollment-code', { method: 'POST' }),
   listDevices: () => request<Device[]>('/api/auth/devices'),
