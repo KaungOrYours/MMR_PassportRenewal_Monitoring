@@ -71,17 +71,27 @@ def run_embassy_pdf_check(session) -> None:
         issues = []
         for page in pages:
             parsed = parse_page(page.page_no, page.text)
-            if parsed.has_gap and mode == "ocr":
+            # row_count == 0 is only suspicious in OCR mode -- a text-layer
+            # PDF page can legitimately have no table rows (e.g. a trailing
+            # blank/signature page), and that's not an OCR failure to catch.
+            zero_rows_ocr = mode == "ocr" and parsed.row_count == 0 and parsed.index_marker_count == 0
+            if (parsed.has_gap or zero_rows_ocr) and mode == "ocr":
                 log.warning("[embassy_pdf] Integrity gap on page %d (rows=%d, markers=%d) -- retrying OCR",
                             page.page_no, parsed.row_count, parsed.index_marker_count)
                 retry_text = reocr_page(pdf_path, page.page_no)
                 retry_parsed = parse_page(page.page_no, retry_text)
                 if retry_parsed.row_count > parsed.row_count:
                     parsed = retry_parsed
+                zero_rows_ocr = mode == "ocr" and parsed.row_count == 0 and parsed.index_marker_count == 0
 
-            if parsed.has_gap:
-                detail = f"expected {parsed.index_marker_count} rows, recovered {parsed.row_count}"
-                issues.append({"page_no": page.page_no, "kind": "row_count_mismatch", "detail": detail})
+            if parsed.has_gap or zero_rows_ocr:
+                if zero_rows_ocr:
+                    kind = "zero_rows_extracted"
+                    detail = "0 rows and 0 index markers detected -- likely total OCR failure, not an empty page"
+                else:
+                    kind = "row_count_mismatch"
+                    detail = f"expected {parsed.index_marker_count} rows, recovered {parsed.row_count}"
+                issues.append({"page_no": page.page_no, "kind": kind, "detail": detail})
                 log.error("[embassy_pdf] Unresolved integrity gap on page %d: %s", page.page_no, detail)
 
             all_rows.extend(parsed.rows)
