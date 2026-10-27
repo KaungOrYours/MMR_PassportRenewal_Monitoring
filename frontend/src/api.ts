@@ -9,7 +9,18 @@ export interface Watchlist {
   telegram_chat_id: string | null
   note: string | null
   active: boolean
+  lookup_token: string | null
   created_at: string
+}
+
+export interface PublicStatus {
+  full_name: string
+  passport_no: string | null
+  active: boolean
+  status: 'pending' | 'matched' | 'paused'
+  appointment_date: string | null
+  matched_name_on_list: string | null
+  matched_source: string | null
 }
 
 export interface Entry {
@@ -89,6 +100,7 @@ export const api = {
     data: Partial<Pick<Watchlist, 'full_name' | 'passport_no' | 'telegram_chat_id' | 'note' | 'active'>>,
   ) => request<Watchlist>(`/api/watchlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteWatchlist: (id: number) => request<void>(`/api/watchlist/${id}`, { method: 'DELETE' }),
+  statusByToken: (token: string) => request<PublicStatus>(`/api/watchlist/status/${token}`),
   listMatches: () => request<MatchRecord[]>('/api/matches'),
   dismissMatch: (id: number) => request<void>(`/api/matches/${id}`, { method: 'DELETE' }),
   listSnapshots: () => request<Snapshot[]>('/api/snapshots'),

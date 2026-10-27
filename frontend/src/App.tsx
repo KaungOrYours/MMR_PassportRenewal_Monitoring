@@ -4,6 +4,7 @@ import AlertsView from './views/AlertsView'
 import ListsView from './views/ListsView'
 import SignupView from './views/SignupView'
 import StatusView from './views/StatusView'
+import UserStatusView from './views/UserStatusView'
 import WatchlistView from './views/WatchlistView'
 
 const TABS = [
@@ -52,8 +53,14 @@ function AdminDashboard() {
 }
 
 export default function App() {
-  // no router library for a two-page app -- /admin is the Passkey-gated
-  // dashboard, everything else is the public self-service signup
-  const isAdmin = window.location.pathname.startsWith('/admin')
-  return isAdmin ? <AdminDashboard /> : <SignupView />
+  // no router library for a few-page app -- /admin is the Passkey-gated
+  // dashboard, /status/<token> is a person's own read-only status, and
+  // everything else is the public self-service signup
+  const path = window.location.pathname
+  if (path.startsWith('/admin')) return <AdminDashboard />
+
+  const statusMatch = path.match(/^\/status\/([^/]+)/)
+  if (statusMatch) return <UserStatusView token={statusMatch[1]} />
+
+  return <SignupView />
 }

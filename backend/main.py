@@ -1,4 +1,6 @@
+import logging
 import os
+import secrets
 
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -7,13 +9,16 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from checker import db as models
+from checker.notify import send_message
 
 from .auth import get_db, require_session
 from .schemas import (
-    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut,
-    WatchlistUpdate, mask_passport, mask_telegram_id,
+    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicStatusOut, SnapshotOut, WatchlistIn,
+    WatchlistOut, WatchlistUpdate, mask_passport, mask_telegram_id,
 )
 from .webauthn_routes import router as webauthn_router
+
+log = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
 
@@ -44,7 +49,7 @@ def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
     return WatchlistOut(
         id=entry.id, full_name=entry.full_name, passport_no=mask_passport(entry.passport_no),
         telegram_chat_id=mask_telegram_id(entry.telegram_chat_id),
-        note=entry.note, active=entry.active, created_at=entry.created_at,
+        note=entry.note, active=entry.active, lookup_token=entry.lookup_token, created_at=entry.created_at,
     )
 
 
@@ -54,19 +59,73 @@ def list_watchlist(session: Session = Depends(get_db)):
     return [_to_watchlist_out(w) for w in rows]
 
 
+def _status_url(token: str) -> str:
+    base = os.environ.get("FRONTEND_ORIGIN", "").split(",")[0].strip()
+    return f"{base}/status/{token}" if base else f"/status/{token}"
+
+
 @app.post("/api/watchlist", response_model=WatchlistOut)
 def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     # intentionally public, no session required -- this is the self-service
     # signup anyone with the link can use to add themselves and get
     # notified; only VIEWING/managing the list requires the admin login
+    token = secrets.token_urlsafe(16)
     entry = models.Watchlist(
         full_name=payload.full_name, passport_no=payload.passport_no,
-        telegram_chat_id=payload.telegram_chat_id, note=payload.note,
+        telegram_chat_id=payload.telegram_chat_id, note=payload.note, lookup_token=token,
     )
     session.add(entry)
     session.commit()
     session.refresh(entry)
+
+    if payload.telegram_chat_id:
+        try:
+            send_message(
+                f"✅ You're registered with the MMR Passport Renewal Monitor, {payload.full_name}.\n\n"
+                f"We'll message you here the moment your name and passport number appear on the embassy's "
+                f"lists. Check your status anytime: {_status_url(token)}",
+                chat_id=payload.telegram_chat_id,
+            )
+        except Exception:
+            # best-effort -- a bad chat id or missing bot config must never
+            # block the signup itself
+            log.exception("Failed to send signup confirmation to Telegram")
+
     return _to_watchlist_out(entry)
+
+
+@app.get("/api/watchlist/status/{token}", response_model=PublicStatusOut)
+def watchlist_status(token: str, session: Session = Depends(get_db)):
+    """Public, no login -- the lookup_token itself is the credential. Lets
+    someone who signed up check only their own status, nothing about
+    anyone else on the list."""
+    entry = session.query(models.Watchlist).filter_by(lookup_token=token).first()
+    if entry is None:
+        raise HTTPException(404, "Not found")
+
+    if not entry.active:
+        status = "paused"
+    else:
+        status = "pending"
+
+    match = (
+        session.query(models.MatchRecord)
+        .filter_by(watchlist_id=entry.id)
+        .order_by(models.MatchRecord.created_at.desc())
+        .first()
+    )
+    matched_entry = session.get(models.Entry, match.entry_id) if match else None
+
+    if entry.active and matched_entry is not None:
+        status = "matched"
+
+    return PublicStatusOut(
+        full_name=entry.full_name, passport_no=mask_passport(entry.passport_no), active=entry.active,
+        status=status,
+        appointment_date=matched_entry.approved_date if matched_entry else None,
+        matched_name_on_list=matched_entry.name if matched_entry else None,
+        matched_source=match.source if match else None,
+    )
 
 
 @app.patch("/api/watchlist/{entry_id}", response_model=WatchlistOut, dependencies=[Depends(require_session)])

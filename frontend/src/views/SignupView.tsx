@@ -17,6 +17,7 @@ export default function SignupView() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [statusLink, setStatusLink] = useState('')
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,12 +25,15 @@ export default function SignupView() {
     setSubmitting(true)
     setError('')
     try {
-      await api.createWatchlist({
+      const created = await api.createWatchlist({
         full_name: toTitleCase(form.full_name),
         passport_no: form.passport_no.trim().toUpperCase() || undefined,
         telegram_chat_id: form.telegram_chat_id.trim() || undefined,
         note: form.note.trim() || undefined,
       })
+      if (created.lookup_token) {
+        setStatusLink(`${window.location.origin}/status/${created.lookup_token}`)
+      }
       setDone(true)
     } catch (e) {
       setError(String(e))
@@ -49,16 +53,25 @@ export default function SignupView() {
       </header>
 
       {done ? (
-        <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 p-4 space-y-2">
+        <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 p-4 space-y-3">
           <p className="font-medium text-green-800 dark:text-green-200">You're on the list.</p>
           <p className="text-sm text-green-700 dark:text-green-300">
             We'll check the embassy's lists automatically and message you on Telegram if your name and passport
             number appear.
           </p>
+          {statusLink && (
+            <div className="rounded bg-white dark:bg-neutral-900 border border-green-200 dark:border-green-800 p-2">
+              <p className="text-xs text-neutral-500 mb-1">Bookmark this link to check your status anytime:</p>
+              <a href={statusLink} className="text-xs text-blue-600 hover:underline break-all">
+                {statusLink}
+              </a>
+            </div>
+          )}
           <button
             onClick={() => {
               setForm(emptyForm)
               setDone(false)
+              setStatusLink('')
             }}
             className="text-sm text-blue-600 hover:underline"
           >

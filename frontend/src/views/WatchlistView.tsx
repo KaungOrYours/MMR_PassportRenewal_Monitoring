@@ -90,6 +90,16 @@ export default function WatchlistView() {
     load()
   }
 
+  const remove = async (w: Watchlist) => {
+    if (!confirm(`Remove ${w.full_name} from the watchlist? This can't be undone.`)) return
+    try {
+      await api.deleteWatchlist(w.id)
+      load()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   // most recent match per person, preferring one that actually has a date
   const matchesByWatchlist = new Map<number, MatchRecord>()
   for (const m of matches) {
@@ -154,6 +164,7 @@ export default function WatchlistView() {
                 <th className="px-3 py-2">Telegram ID</th>
                 <th className="px-3 py-2">Note</th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -165,6 +176,11 @@ export default function WatchlistView() {
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
                   <td className="px-3 py-2">
                     <StatusBadge status={statusFor(w, matchesByWatchlist)} onClick={() => toggleActive(w)} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button onClick={() => remove(w)} className="text-red-600 text-xs hover:underline">
+                      Remove
+                    </button>
                   </td>
                 </tr>
               ))}

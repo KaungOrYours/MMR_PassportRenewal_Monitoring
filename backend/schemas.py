@@ -54,10 +54,24 @@ class WatchlistOut(BaseModel):
     telegram_chat_id: str | None
     note: str | None
     active: bool
+    lookup_token: str | None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class PublicStatusOut(BaseModel):
+    """What the person who signed up sees when checking their own status --
+    deliberately thin: no telegram_chat_id, no note, nothing about anyone
+    else. The lookup_token itself is the only credential needed."""
+    full_name: str
+    passport_no: str | None
+    active: bool
+    status: str  # "pending" | "matched" | "paused"
+    appointment_date: str | None = None
+    matched_name_on_list: str | None = None
+    matched_source: str | None = None
 
 
 class EntryOut(BaseModel):

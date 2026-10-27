@@ -26,6 +26,7 @@ class Watchlist(Base):
     telegram_chat_id = Column(String, nullable=True)  # alerts go here if set, else the operator's default chat
     note = Column(String, nullable=True)
     active = Column(Boolean, nullable=False, default=True)
+    lookup_token = Column(String, nullable=True, unique=True)  # lets the person who signed up check their own status, no login
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -154,6 +155,7 @@ _ADDITIVE_COLUMNS = [
     ("snapshots", "external_ref", "VARCHAR"),
     ("matches", "source", "VARCHAR DEFAULT 'embassy_pdf'"),
     ("watchlist", "telegram_chat_id", "VARCHAR"),
+    ("watchlist", "lookup_token", "VARCHAR"),
 ]
 
 
