@@ -5,6 +5,7 @@ export interface Watchlist {
   id: number
   full_name: string
   passport_no: string | null
+  telegram_chat_id: string | null
   note: string | null
   active: boolean
   created_at: string
@@ -68,10 +69,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   health: () => request<{ status: string }>('/api/health'),
   listWatchlist: () => request<Watchlist[]>('/api/watchlist'),
-  createWatchlist: (data: { full_name: string; passport_no?: string; note?: string }) =>
+  createWatchlist: (data: { full_name: string; passport_no?: string; telegram_chat_id?: string; note?: string }) =>
     request<Watchlist>('/api/watchlist', { method: 'POST', body: JSON.stringify(data) }),
-  updateWatchlist: (id: number, data: Partial<Pick<Watchlist, 'full_name' | 'passport_no' | 'note' | 'active'>>) =>
-    request<Watchlist>(`/api/watchlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  updateWatchlist: (
+    id: number,
+    data: Partial<Pick<Watchlist, 'full_name' | 'passport_no' | 'telegram_chat_id' | 'note' | 'active'>>,
+  ) => request<Watchlist>(`/api/watchlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteWatchlist: (id: number) => request<void>(`/api/watchlist/${id}`, { method: 'DELETE' }),
   listMatches: () => request<MatchRecord[]>('/api/matches'),
   dismissMatch: (id: number) => request<void>(`/api/matches/${id}`, { method: 'DELETE' }),

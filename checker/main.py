@@ -137,9 +137,9 @@ def run_embassy_pdf_check(session) -> None:
 
         watch_by_id = {w.id: w for w in watchlist_rows}
         for wl_id, wl_matches in matches_by_watchlist.items():
-            watch_name = watch_by_id[wl_id].full_name
-            send_message(format_match_alert(watch_name, wl_matches))
-            log.info("[embassy_pdf] Notified for watchlist entry %s (%d new match(es))", watch_name, len(wl_matches))
+            watch = watch_by_id[wl_id]
+            send_message(format_match_alert(watch.full_name, wl_matches), chat_id=watch.telegram_chat_id)
+            log.info("[embassy_pdf] Notified for watchlist entry %s (%d new match(es))", watch.full_name, len(wl_matches))
 
         send_message(format_heartbeat(len(all_rows), len(pages), mode, sum(len(v) for v in matches_by_watchlist.values())))
         send_document(str(pdf_path), caption="Latest passport approval list")
@@ -248,9 +248,9 @@ def run_telegram_renewal_check(session) -> None:
 
         watch_by_id = {w.id: w for w in watchlist_rows}
         for wl_id, wl_matches in matches_by_watchlist.items():
-            watch_name = watch_by_id[wl_id].full_name
-            send_message(format_renewal_alert(watch_name, wl_matches))
-            log.info("[telegram_renewal] Notified for watchlist entry %s (%d new match(es))", watch_name, len(wl_matches))
+            watch = watch_by_id[wl_id]
+            send_message(format_renewal_alert(watch.full_name, wl_matches), chat_id=watch.telegram_chat_id)
+            log.info("[telegram_renewal] Notified for watchlist entry %s (%d new match(es))", watch.full_name, len(wl_matches))
 
         send_message(format_renewal_heartbeat(len(all_rows), len(post.photos),
                                                sum(len(v) for v in matches_by_watchlist.values())))

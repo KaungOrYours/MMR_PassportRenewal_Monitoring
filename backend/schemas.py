@@ -20,15 +20,29 @@ def mask_passport(passport: str | None) -> str | None:
     return f"{letters}{digits[:1]}***{digits[-2:]}"
 
 
+def mask_telegram_id(chat_id: str | None) -> str | None:
+    """Same reasoning as mask_passport -- never return the full ID from the
+    raw API, only the last 3 digits for the owner to recognize which
+    registration is theirs."""
+    if not chat_id:
+        return chat_id
+    compact = chat_id.strip()
+    if len(compact) <= 3:
+        return compact
+    return f"***{compact[-3:]}"
+
+
 class WatchlistIn(BaseModel):
     full_name: str
     passport_no: str | None = None
+    telegram_chat_id: str | None = None
     note: str | None = None
 
 
 class WatchlistUpdate(BaseModel):
     full_name: str | None = None
     passport_no: str | None = None
+    telegram_chat_id: str | None = None
     note: str | None = None
     active: bool | None = None
 
@@ -37,6 +51,7 @@ class WatchlistOut(BaseModel):
     id: int
     full_name: str
     passport_no: str | None
+    telegram_chat_id: str | None
     note: str | None
     active: bool
     created_at: datetime

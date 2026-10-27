@@ -23,6 +23,7 @@ class Watchlist(Base):
     id = Column(Integer, primary_key=True)
     full_name = Column(String, nullable=False)
     passport_no = Column(String, nullable=True)
+    telegram_chat_id = Column(String, nullable=True)  # alerts go here if set, else the operator's default chat
     note = Column(String, nullable=True)
     active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -103,6 +104,7 @@ _ADDITIVE_COLUMNS = [
     ("snapshots", "source", "VARCHAR DEFAULT 'embassy_pdf'"),
     ("snapshots", "external_ref", "VARCHAR"),
     ("matches", "source", "VARCHAR DEFAULT 'embassy_pdf'"),
+    ("watchlist", "telegram_chat_id", "VARCHAR"),
 ]
 
 

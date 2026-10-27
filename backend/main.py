@@ -11,7 +11,7 @@ from checker import db as models
 from .auth import require_api_key
 from .schemas import (
     EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, SnapshotOut, WatchlistIn, WatchlistOut,
-    WatchlistUpdate, mask_passport,
+    WatchlistUpdate, mask_passport, mask_telegram_id,
 )
 
 app = FastAPI(title="MMR Passport Renewal Monitor API")
@@ -44,6 +44,7 @@ def _to_watchlist_out(entry: models.Watchlist) -> WatchlistOut:
     # is bypassable by anyone who reads the key out of the bundle
     return WatchlistOut(
         id=entry.id, full_name=entry.full_name, passport_no=mask_passport(entry.passport_no),
+        telegram_chat_id=mask_telegram_id(entry.telegram_chat_id),
         note=entry.note, active=entry.active, created_at=entry.created_at,
     )
 
@@ -56,7 +57,10 @@ def list_watchlist(session: Session = Depends(get_db)):
 
 @app.post("/api/watchlist", response_model=WatchlistOut, dependencies=[Depends(require_api_key)])
 def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
-    entry = models.Watchlist(full_name=payload.full_name, passport_no=payload.passport_no, note=payload.note)
+    entry = models.Watchlist(
+        full_name=payload.full_name, passport_no=payload.passport_no,
+        telegram_chat_id=payload.telegram_chat_id, note=payload.note,
+    )
     session.add(entry)
     session.commit()
     session.refresh(entry)

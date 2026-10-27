@@ -42,12 +42,14 @@ function StatusBadge({ status, onClick }: { status: RowStatus; onClick: () => vo
   )
 }
 
+const emptyForm = { full_name: '', passport_no: '', telegram_chat_id: '', note: '' }
+
 export default function WatchlistView() {
   const [items, setItems] = useState<Watchlist[]>([])
   const [matches, setMatches] = useState<MatchRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ full_name: '', passport_no: '', note: '' })
+  const [form, setForm] = useState(emptyForm)
   const [submitting, setSubmitting] = useState(false)
 
   const load = () => {
@@ -71,9 +73,10 @@ export default function WatchlistView() {
       await api.createWatchlist({
         full_name: toTitleCase(form.full_name),
         passport_no: form.passport_no.trim().toUpperCase() || undefined,
+        telegram_chat_id: form.telegram_chat_id.trim() || undefined,
         note: form.note.trim() || undefined,
       })
-      setForm({ full_name: '', passport_no: '', note: '' })
+      setForm(emptyForm)
       load()
     } catch (e) {
       setError(String(e))
@@ -113,6 +116,12 @@ export default function WatchlistView() {
         />
         <input
           className="w-40 rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
+          placeholder="Telegram ID (optional)"
+          value={form.telegram_chat_id}
+          onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })}
+        />
+        <input
+          className="w-40 rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
           placeholder="Note (optional)"
           value={form.note}
           onChange={(e) => setForm({ ...form, note: e.target.value })}
@@ -124,6 +133,29 @@ export default function WatchlistView() {
           Add
         </button>
       </form>
+
+      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 space-y-2 text-xs text-neutral-500">
+        <p>
+          <span className="font-medium text-neutral-700 dark:text-neutral-300">Telegram ID (optional):</span> if set,
+          alerts for this person go to their own Telegram instead of the default chat. To find your Telegram ID,
+          message{' '}
+          <a
+            href="https://t.me/userinfobot"
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            @userinfobot
+          </a>{' '}
+          on Telegram — it replies instantly with your ID.
+        </p>
+        <p>
+          <span className="font-medium text-neutral-700 dark:text-neutral-300">Your data, your responsibility:</span>{' '}
+          this is a best-effort personal monitoring tool, not an official embassy service. Matching can miss entries
+          (OCR errors, unclear names) or misfire (shared names). Always verify independently before relying on an
+          alert, and do not submit anyone's information without their consent.
+        </p>
+      </div>
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {loading ? (
@@ -137,6 +169,7 @@ export default function WatchlistView() {
               <tr>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Passport No.</th>
+                <th className="px-3 py-2">Telegram ID</th>
                 <th className="px-3 py-2">Note</th>
                 <th className="px-3 py-2">Status</th>
               </tr>
@@ -146,6 +179,7 @@ export default function WatchlistView() {
                 <tr key={w.id} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-3 py-2 font-medium">{w.full_name}</td>
                   <td className="px-3 py-2 font-mono">{w.passport_no || '—'}</td>
+                  <td className="px-3 py-2 font-mono">{w.telegram_chat_id || '—'}</td>
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
                   <td className="px-3 py-2">
                     <StatusBadge status={statusFor(w, matchesByWatchlist)} onClick={() => toggleActive(w)} />
