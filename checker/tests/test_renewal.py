@@ -86,14 +86,15 @@ def test_unrelated_entry_does_not_match_renewal_row():
     assert match_renewal_row(entry, row) is None
 
 
-def test_renewal_passport_match_alone_is_sufficient():
-    """Passport number is authoritative -- see test_match.py for why."""
+def test_renewal_passport_match_alone_is_not_sufficient():
+    """Unlike the embassy PDF path (test_match.py), a masked-passport match
+    alone is NOT enough here -- the hidden 2 digits mean a different real
+    person could coincidentally share the same visible digits, and the
+    name is the only way to tell them apart from this source."""
     result = parse_renewal_page(1, SAMPLE_PAGE)
     row = next(r for r in result.rows if r.name == "NYAN LIN HTET")
     entry = WatchlistEntry(id=1, full_name="Completely Different Person", passport_no="MG771548")
-    m = match_renewal_row(entry, row)
-    assert m is not None
-    assert m.matched_on == "passport"
+    assert match_renewal_row(entry, row) is None
 
 
 def test_renewal_name_only_match_is_not_reported():

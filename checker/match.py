@@ -1,12 +1,24 @@
 """Match parsed approval-list rows against the watchlist.
 
-Matching relies on the passport/ID number alone. Names are OCR'd from
-scanned images and are too failure-prone to gate a match on -- a genuine
-match can have a mangled name (a dropped letter, a misread character) while
-the passport number still reads correctly, and requiring both would turn
-that into a missed notification instead of a successful one. The passport
-number is the authoritative unique identifier; the name is kept only as an
-informational field on the match (matched_on/score), not a requirement.
+The two sources use different policies, deliberately:
+
+- `match_row` (embassy PDF, full passport number): passport alone is
+  sufficient. Names are OCR'd from scanned images and are too failure-prone
+  to gate a match on -- a genuine match can have a mangled name (a dropped
+  letter, a misread character) while the passport number still reads
+  correctly, and requiring both would turn that into a missed notification
+  instead of a successful one. The full passport number is specific enough
+  (2 letters + 6 digits) that a coincidental collision with someone else is
+  not a real concern here.
+- `match_renewal_row` (@mesg15 channel, MASKED passport number -- the
+  embassy itself redacts the middle 2 of 6 digits before posting): passport
+  alone is NOT sufficient. The hidden 2 digits mean two different real
+  passport holders could coincidentally share the same visible letters +
+  first 2 + last 2 digits, and that can never be told apart from the
+  masked post alone. Both the passport's visible digits AND a plausible
+  name match are required here -- a deliberate choice to eliminate the
+  wrong-person false-positive risk, accepting in exchange that a genuine
+  match with a badly OCR'd name on this specific list will go unreported.
 """
 import re
 from dataclasses import dataclass
@@ -119,12 +131,15 @@ def masked_passport_matches(full_passport: str, masked: str) -> bool:
 
 
 def match_renewal_row(entry: WatchlistEntry, row: RenewalRow) -> RenewalMatch | None:
-    # same reasoning as match_row above -- passport alone is sufficient
+    # unlike match_row, BOTH must match here -- see module docstring for why
+    # the masked passport alone isn't sufficient on this source.
     passport_match = entry.passport_no is not None and masked_passport_matches(entry.passport_no, row.masked_passport)
     if not passport_match:
         return None
     name_match, name_score = names_plausibly_match(entry.full_name, row.name)
-    return RenewalMatch(entry.id, row, "high", "name+passport" if name_match else "passport", name_score)
+    if not name_match:
+        return None
+    return RenewalMatch(entry.id, row, "high", "name+passport", name_score)
 
 
 def find_renewal_matches(watchlist: list[WatchlistEntry], rows: list[RenewalRow]) -> list[RenewalMatch]:

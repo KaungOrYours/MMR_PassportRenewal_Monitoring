@@ -50,12 +50,23 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
 
 ## Key decisions and why
 
-- **Matching is passport-number-only**, not "name AND passport." Originally
-  required both, but OCR mangles names often enough (especially long Burmese
-  names) that requiring a name match too was silently dropping real matches.
-  A passport hit alone is now sufficient and reported; the name is still
-  shown/compared for display and flagged as `name+passport` vs `passport`
-  confidence, but is no longer a gate.
+- **Matching is passport-number-only for the embassy PDF (`match_row`)**,
+  not "name AND passport." Originally required both, but OCR mangles names
+  often enough (especially long Burmese names) that requiring a name match
+  too was silently dropping real matches. A passport hit alone is now
+  sufficient and reported; the name is still shown/compared for display and
+  flagged as `name+passport` vs `passport` confidence, but is no longer a
+  gate.
+- **The `@mesg15` renewal list (`match_renewal_row`) is the deliberate
+  exception: it requires BOTH the masked passport's visible digits AND a
+  plausible name match.** The embassy redacts the middle 2 of 6 digits
+  before posting, so two different real passport holders could
+  coincidentally share the same visible letters + first 2 + last 2 digits
+  -- unlike the full-passport PDF case, that ambiguity can never be told
+  apart from the masked post alone, and the name is the only disambiguator
+  available. User-requested tradeoff, made with the explicit downside
+  understood: a genuine match with a badly OCR'd name on this specific list
+  will now go unreported (the opposite tradeoff from `match_row` above).
 - **Fuzzy name matching uses `rapidfuzz.fuzz.token_sort_ratio`, not
   `token_set_ratio`.** `token_set_ratio` produced false positives on Myanmar
   names that share a short base word (e.g. "KAUNG HTET" scored as a strong
