@@ -105,6 +105,27 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
   not just UI gates, for the same reason as PII masking — a direct API call
   could otherwise bypass a client-side-only check. `terms_accepted_at` is a
   durable timestamp column, not a transient checkbox.
+- **Signup dedup (`POST /api/watchlist`) requires the submitted name to
+  plausibly match the existing record's name**, not just a `telegram_chat_id`
+  or `passport_no` hit. Originally matched on either field alone — but
+  neither is secret (a chat ID is shown by the bot to anyone who starts a
+  chat with it; a passport number can be known without being controlled),
+  so anyone submitting a known/guessed field got back that person's real,
+  unmasked `full_name`, and could even backfill their own `telegram_chat_id`
+  onto someone else's passport-only record, redirecting that person's future
+  alerts to themselves. Fixed by requiring `names_plausibly_match()`
+  (`checker/match.py`, the same `token_sort_ratio` logic used for
+  embassy-list matching) between the submitted and stored name before
+  treating a field hit as "this is the same person re-submitting."
+- **The Telegram webhook secret (`TELEGRAM_WEBHOOK_SECRET`) is separate from
+  `API_SECRET`**, not the same value reused. They were originally the same
+  on the theory that `API_SECRET` becomes "permanently useless" once the
+  first admin device is registered — true for the *bootstrap* use, but the
+  webhook check (`backend/telegram_webhook.py`) used the same value forever,
+  so a leaked `API_SECRET` would stay a live way to forge webhook calls
+  indefinitely, not a one-time risk. `backend/auth.py::webhook_secret()`
+  falls back to `API_SECRET` when the new var is unset, so existing
+  deployments keep working until it's added on Render (see README).
 - **Full names are stored and shown in ALL CAPS**, matching how names appear
   on Myanmar passports and on the embassy's own lists (avoids a mismatch
   between "as entered" casing and "as displayed on official documents").

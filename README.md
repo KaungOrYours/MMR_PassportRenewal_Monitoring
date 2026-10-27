@@ -67,8 +67,9 @@ Three independently deployed pieces, one repo:
 
 Already created: `@MMR_PassportRenewalMonitoringBot`. **Revoke and regenerate
 the bot token via @BotFather** before deploying -- the original token was
-shared in plaintext during setup. Message the bot `/start` once to register
-your chat; the chat ID is already captured as `REDACTED_OPERATOR_TELEGRAM_CHAT_ID`.
+shared in plaintext during setup. Message the bot `/start` once; it replies
+with your chat's numeric ID -- that's the `TELEGRAM_CHAT_ID` value used
+below (the operator's own, not a user's).
 
 The backend also needs `TELEGRAM_BOT_TOKEN` set on **Render** (separate from
 the GitHub Actions secret above -- this is a different runtime) so the
@@ -116,7 +117,7 @@ In the repo's Settings -> Secrets and variables -> Actions, add:
 
 - `NEON_DATABASE_URL`
 - `TELEGRAM_BOT_TOKEN` (the regenerated token)
-- `TELEGRAM_CHAT_ID` = `REDACTED_OPERATOR_TELEGRAM_CHAT_ID`
+- `TELEGRAM_CHAT_ID` (from step 1 -- the operator's own chat ID)
 - `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` (from step 3.1)
 - `TELEGRAM_SESSION_STRING` (from step 3.2 -- never commit this)
 
@@ -135,6 +136,15 @@ repo. Set these env vars when prompted:
   **one-time bootstrap credential only**, used once to register the first
   admin device -- see step 7. Never baked into the frontend; type it in by
   hand during that one ceremony and never use it again afterward.
+- `TELEGRAM_WEBHOOK_SECRET` -- a separate long random string (`openssl rand
+  -hex 32`), distinct from `API_SECRET`. Verifies that an incoming
+  `/api/telegram/webhook` request really came from Telegram. Kept separate
+  from `API_SECRET` on purpose: that one proves "this browser may register
+  the first admin device," which is a different trust boundary than "this
+  HTTP request came from Telegram's servers," and a leak of one must not
+  compromise the other. If this var is unset, the backend falls back to
+  `API_SECRET` for compatibility -- set it explicitly so `API_SECRET` goes
+  back to being bootstrap-only, as described above.
 - `GH_DISPATCH_TOKEN` -- a GitHub personal access token (fine-grained,
   `Actions: write` on this repo only) so the admin dashboard's "Check now"
   button can trigger the workflow

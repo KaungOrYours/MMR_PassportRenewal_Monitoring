@@ -46,6 +46,17 @@ def get_db():
         session.close()
 
 
+def webhook_secret() -> str:
+    # TELEGRAM_WEBHOOK_SECRET is a dedicated secret, separate from
+    # API_SECRET (the admin-bootstrap credential) -- the two guard very
+    # different things (a one-time device-enrollment proof vs. a
+    # forever-live "did this request really come from Telegram" check),
+    # so a leak of one must not also compromise the other. Falls back to
+    # API_SECRET when the new var isn't set yet so existing deployments
+    # keep working until it's added on Render.
+    return os.environ.get("TELEGRAM_WEBHOOK_SECRET") or os.environ.get("API_SECRET", "")
+
+
 def require_api_key(x_api_key: str = Header(default="")) -> None:
     """Gates ONLY the very first device's bootstrap registration -- see
     webauthn_routes.register_begin. Every other route uses require_session;

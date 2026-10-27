@@ -1,3 +1,4 @@
+import html
 import logging
 import os
 import secrets
@@ -10,9 +11,10 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from checker import db as models
+from checker.match import names_plausibly_match
 from checker.notify import send_message
 
-from .auth import get_db, require_session
+from .auth import get_db, require_session, webhook_secret
 from .schemas import (
     EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut, PublicStats, PublicStatusOut,
     SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, mask_name, mask_passport, mask_telegram_id,
@@ -41,19 +43,17 @@ app.include_router(telegram_router)
 
 @app.on_event("startup")
 def _register_telegram_webhook() -> None:
-    # self-registers on every boot so there's no manual setWebhook step --
-    # reuses API_SECRET as the webhook's verification secret rather than
-    # adding yet another env var
+    # self-registers on every boot so there's no manual setWebhook step
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     public_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("BACKEND_PUBLIC_URL")
-    api_secret = os.environ.get("API_SECRET")
-    if not (bot_token and public_url and api_secret):
-        log.warning("Skipping Telegram webhook registration (missing TELEGRAM_BOT_TOKEN/RENDER_EXTERNAL_URL/API_SECRET)")
+    secret = webhook_secret()
+    if not (bot_token and public_url and secret):
+        log.warning("Skipping Telegram webhook registration (missing TELEGRAM_BOT_TOKEN/RENDER_EXTERNAL_URL/webhook secret)")
         return
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{bot_token}/setWebhook",
-            json={"url": f"{public_url.rstrip('/')}/api/telegram/webhook", "secret_token": api_secret},
+            json={"url": f"{public_url.rstrip('/')}/api/telegram/webhook", "secret_token": secret},
             timeout=15,
         )
         resp.raise_for_status()
@@ -125,12 +125,23 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
 
     # re-submitting the same details (e.g. revisiting the site) retrieves
     # the existing registration instead of creating a duplicate -- matches
-    # on telegram id or passport number, whichever was provided
+    # on telegram id or passport number, whichever was provided. A field
+    # match alone is NOT proof this is the same person submitting -- a
+    # telegram_chat_id or passport_no can be known/guessed without
+    # controlling that account, and returning/updating someone else's
+    # record on that basis alone would disclose their real name or
+    # redirect their alerts to an attacker. The submitted full_name must
+    # also plausibly match the existing record's before it's treated as
+    # a resubmission rather than an unrelated new signup.
     existing = None
     if payload.telegram_chat_id:
-        existing = session.query(models.Watchlist).filter_by(telegram_chat_id=payload.telegram_chat_id).first()
+        candidate = session.query(models.Watchlist).filter_by(telegram_chat_id=payload.telegram_chat_id).first()
+        if candidate is not None and names_plausibly_match(payload.full_name, candidate.full_name)[0]:
+            existing = candidate
     if existing is None and payload.passport_no:
-        existing = session.query(models.Watchlist).filter_by(passport_no=payload.passport_no).first()
+        candidate = session.query(models.Watchlist).filter_by(passport_no=payload.passport_no).first()
+        if candidate is not None and names_plausibly_match(payload.full_name, candidate.full_name)[0]:
+            existing = candidate
 
     if existing is not None:
         if not existing.lookup_token:
@@ -152,7 +163,7 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
         telegram_sent = telegram_error = None
         if existing.telegram_chat_id:
             telegram_sent, telegram_error = _try_send(
-                f"👋 Welcome back, {existing.full_name} — you're already registered.\n\n"
+                f"👋 Welcome back, {html.escape(existing.full_name)} — you're already registered.\n\n"
                 f"Check your status anytime: {_status_url(existing.lookup_token)}",
                 chat_id=existing.telegram_chat_id,
             )
@@ -171,7 +182,7 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     telegram_sent = telegram_error = None
     if payload.telegram_chat_id:
         telegram_sent, telegram_error = _try_send(
-            f"👋 Hi {payload.full_name}, you're now registered with the MMR Passport Renewal Monitor.\n\n"
+            f"👋 Hi {html.escape(payload.full_name)}, you're now registered with the MMR Passport Renewal Monitor.\n\n"
             f"You are not on the embassy's list yet. The moment your name and passport number appear on "
             f"either the approval list or a renewal appointment post, we'll notify you right here in this "
             f"chat.\n\nCheck your status anytime: {_status_url(token)}",

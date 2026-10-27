@@ -50,7 +50,7 @@ def fold_confusables(identifier: str) -> str:
     return re.sub(r"\s+", "", identifier).upper().translate(_CONFUSABLE_FOLD)
 
 
-def _name_matches(watch_name: str, row_name: str) -> tuple[bool, int]:
+def names_plausibly_match(watch_name: str, row_name: str) -> tuple[bool, int]:
     a = normalize_name(watch_name)
     b = normalize_name(row_name)
     if not a or not b:
@@ -76,7 +76,7 @@ def match_row(entry: WatchlistEntry, row: Row) -> Match | None:
     )
     if not passport_match:
         return None
-    name_match, name_score = _name_matches(entry.full_name, row.name)
+    name_match, name_score = names_plausibly_match(entry.full_name, row.name)
     return Match(entry.id, row, "high", "name+passport" if name_match else "passport", name_score)
 
 
@@ -123,7 +123,7 @@ def match_renewal_row(entry: WatchlistEntry, row: RenewalRow) -> RenewalMatch | 
     passport_match = entry.passport_no is not None and masked_passport_matches(entry.passport_no, row.masked_passport)
     if not passport_match:
         return None
-    name_match, name_score = _name_matches(entry.full_name, row.name)
+    name_match, name_score = names_plausibly_match(entry.full_name, row.name)
     return RenewalMatch(entry.id, row, "high", "name+passport" if name_match else "passport", name_score)
 
 

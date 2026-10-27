@@ -1,4 +1,5 @@
 """Telegram notifications for the passport monitor."""
+import html
 import os
 
 import requests
@@ -44,7 +45,10 @@ def send_document(file_path: str, caption: str = "", chat_id: str | None = None)
 
 
 def format_match_alert(watch_name: str, matches: list) -> str:
-    lines = [f"🛂 <b>Passport update for {watch_name}</b>"]
+    # watch_name is user-submitted at signup -- escape before interpolating
+    # into a parse_mode="HTML" message so it can't break entity parsing
+    # or inject tags into the alert.
+    lines = [f"🛂 <b>Passport update for {html.escape(watch_name)}</b>"]
     for m in matches:
         badge = "✅ high confidence" if m.confidence == "high" else f"⚠️ medium confidence ({m.matched_on})"
         lines.append(
@@ -75,7 +79,7 @@ def format_integrity_warning(issues: list) -> str:
 
 
 def format_renewal_alert(watch_name: str, matches: list) -> str:
-    lines = [f"\U0001F6C2 <b>Passport renewal appointment for {watch_name}</b>"]
+    lines = [f"\U0001F6C2 <b>Passport renewal appointment for {html.escape(watch_name)}</b>"]
     for m in matches:
         badge = "\u2705 high confidence" if m.confidence == "high" else f"\u26a0\ufe0f medium confidence ({m.matched_on})"
         lines.append(

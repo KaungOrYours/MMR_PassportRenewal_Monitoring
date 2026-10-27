@@ -8,8 +8,10 @@ first, one-tap step of the signup flow, and replying immediately with
 either their chat ID (new user, to paste into the form) or their existing
 status (returning user), so starting the bot alone is useful either way.
 """
+import html
 import logging
 import os
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -17,7 +19,7 @@ from sqlalchemy.orm import Session
 from checker import db as models
 from checker.notify import send_message
 
-from .auth import get_db
+from .auth import get_db, webhook_secret
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 log = logging.getLogger("uvicorn.error")
@@ -33,8 +35,8 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    expected_secret = os.environ.get("API_SECRET", "")
-    if not expected_secret or x_telegram_bot_api_secret_token != expected_secret:
+    expected_secret = webhook_secret()
+    if not expected_secret or not secrets.compare_digest(x_telegram_bot_api_secret_token or "", expected_secret):
         raise HTTPException(401, "Invalid webhook secret")
 
     update = await request.json()
@@ -53,7 +55,7 @@ async def telegram_webhook(
             base = _frontend_base()
             link = f"{base}/status/{existing.lookup_token}" if base and existing.lookup_token else None
             text = (
-                f"👋 Welcome back, {existing.full_name} — you're already registered."
+                f"👋 Welcome back, {html.escape(existing.full_name)} — you're already registered."
                 + (f"\n\nCheck your status anytime: {link}" if link else "")
             )
         else:
