@@ -56,6 +56,7 @@ class WatchlistIn(BaseModel):
     passport_no: str | None = None
     telegram_chat_id: str | None = None
     note: str | None = None
+    terms_accepted: bool = False
 
 
 class WatchlistUpdate(BaseModel):

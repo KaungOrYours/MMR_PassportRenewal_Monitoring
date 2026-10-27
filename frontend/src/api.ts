@@ -109,8 +109,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   health: () => request<{ status: string }>('/api/health'),
   listWatchlist: () => request<Watchlist[]>('/api/watchlist'),
-  createWatchlist: (data: { full_name: string; passport_no?: string; telegram_chat_id?: string; note?: string }) =>
-    request<Watchlist>('/api/watchlist', { method: 'POST', body: JSON.stringify(data) }),
+  createWatchlist: (data: {
+    full_name: string
+    passport_no?: string
+    telegram_chat_id?: string
+    note?: string
+    terms_accepted: boolean
+  }) => request<Watchlist>('/api/watchlist', { method: 'POST', body: JSON.stringify(data) }),
   updateWatchlist: (
     id: number,
     data: Partial<Pick<Watchlist, 'full_name' | 'passport_no' | 'telegram_chat_id' | 'note' | 'active'>>,

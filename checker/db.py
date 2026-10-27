@@ -27,6 +27,7 @@ class Watchlist(Base):
     note = Column(String, nullable=True)
     active = Column(Boolean, nullable=False, default=True)
     lookup_token = Column(String, nullable=True, unique=True)  # lets the person who signed up check their own status, no login
+    terms_accepted_at = Column(DateTime(timezone=True), nullable=True)  # durable consent record, not just a UI checkbox
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -156,6 +157,7 @@ _ADDITIVE_COLUMNS = [
     ("matches", "source", "VARCHAR DEFAULT 'embassy_pdf'"),
     ("watchlist", "telegram_chat_id", "VARCHAR"),
     ("watchlist", "lookup_token", "VARCHAR"),
+    ("watchlist", "terms_accepted_at", "TIMESTAMPTZ"),
 ]
 
 

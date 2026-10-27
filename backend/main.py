@@ -1,6 +1,7 @@
 import logging
 import os
 import secrets
+from datetime import datetime, timezone
 
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -99,6 +100,10 @@ def list_watchlist(session: Session = Depends(get_db)):
     return [_to_watchlist_out(w) for w in rows]
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _status_url(token: str) -> str:
     base = os.environ.get("FRONTEND_ORIGIN", "").split(",")[0].strip()
     return f"{base}/status/{token}" if base else f"/status/{token}"
@@ -109,6 +114,14 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     # intentionally public, no session required -- this is the self-service
     # signup anyone with the link can use to add themselves and get
     # notified; only VIEWING/managing the list requires the admin login
+
+    # enforced server-side, not just a UI checkbox -- a durable consent
+    # record (terms_accepted_at) matters more than a client-side gate that
+    # a direct API call could bypass
+    if not payload.terms_accepted:
+        raise HTTPException(400, "You must accept the Terms & Conditions to register.")
+    if not payload.telegram_chat_id:
+        raise HTTPException(400, "A Telegram ID is required so we can actually notify you.")
 
     # re-submitting the same details (e.g. revisiting the site) retrieves
     # the existing registration instead of creating a duplicate -- matches
@@ -122,6 +135,8 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     if existing is not None:
         if not existing.lookup_token:
             existing.lookup_token = secrets.token_urlsafe(16)
+        if not existing.terms_accepted_at:
+            existing.terms_accepted_at = _utcnow()
         # fill in anything the existing record was missing (e.g. an
         # admin-created entry that predates the Telegram ID field) rather
         # than silently ignoring newly-submitted details
@@ -147,6 +162,7 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
     entry = models.Watchlist(
         full_name=payload.full_name, passport_no=payload.passport_no,
         telegram_chat_id=payload.telegram_chat_id, note=payload.note, lookup_token=token,
+        terms_accepted_at=_utcnow(),
     )
     session.add(entry)
     session.commit()

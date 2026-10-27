@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type MatchRecord, type Watchlist } from '../api'
 
-function toTitleCase(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-    .join(' ')
-}
-
 type RowStatus =
   | { kind: 'paused' }
   | { kind: 'pending' }
@@ -67,14 +58,15 @@ export default function WatchlistView() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.full_name.trim()) return
+    if (!form.full_name.trim() || !form.telegram_chat_id.trim()) return
     setSubmitting(true)
     try {
       await api.createWatchlist({
-        full_name: toTitleCase(form.full_name),
+        full_name: form.full_name.trim().toUpperCase(),
         passport_no: form.passport_no.trim().toUpperCase() || undefined,
-        telegram_chat_id: form.telegram_chat_id.trim() || undefined,
+        telegram_chat_id: form.telegram_chat_id.trim(),
         note: form.note.trim() || undefined,
+        terms_accepted: true,
       })
       setForm(emptyForm)
       load()
@@ -126,7 +118,7 @@ export default function WatchlistView() {
         />
         <input
           className="w-40 rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
-          placeholder="Telegram ID (optional)"
+          placeholder="Telegram ID (required)"
           value={form.telegram_chat_id}
           onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })}
         />
@@ -137,7 +129,7 @@ export default function WatchlistView() {
           onChange={(e) => setForm({ ...form, note: e.target.value })}
         />
         <button
-          disabled={submitting}
+          disabled={submitting || !form.full_name.trim() || !form.telegram_chat_id.trim()}
           className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
         >
           Add
@@ -146,7 +138,8 @@ export default function WatchlistView() {
 
       <p className="text-xs text-neutral-500">
         Anyone can also add themselves at the public signup link without needing admin access — entries added here
-        or there show up in the same list below.
+        or there show up in the same list below. A Telegram ID is required (they must have messaged the bot
+        first) since terms acceptance and notification both depend on it.
       </p>
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -170,7 +163,7 @@ export default function WatchlistView() {
             <tbody>
               {items.map((w) => (
                 <tr key={w.id} className="border-t border-neutral-200 dark:border-neutral-800">
-                  <td className="px-3 py-2 font-medium">{w.full_name}</td>
+                  <td className="px-3 py-2 font-medium">{w.full_name.toUpperCase()}</td>
                   <td className="px-3 py-2 font-mono">{w.passport_no || '—'}</td>
                   <td className="px-3 py-2 font-mono">{w.telegram_chat_id || '—'}</td>
                   <td className="px-3 py-2 text-neutral-500">{w.note || '—'}</td>
