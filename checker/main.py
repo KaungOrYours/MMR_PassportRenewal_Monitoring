@@ -12,6 +12,7 @@ import hashlib
 import logging
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import db
@@ -147,29 +148,30 @@ def run_embassy_pdf_check(session) -> None:
             send_message(format_integrity_warning(issues))
 
 
+RENEWAL_BACKFILL_DAYS = 30
+
+
 def run_telegram_renewal_check(session) -> None:
     prev = _latest_snapshot(session, "telegram_renewal")
 
-    if prev is None:
-        # bootstrap: don't backfill the channel's entire history, only alert
-        # on posts from here forward
-        latest_id = telegram_source.get_latest_message_id()
-        log.info("[telegram_renewal] First run -- bootstrapping watermark at message id %d (no backfill)", latest_id)
-        session.add(db.Snapshot(
-            source="telegram_renewal", external_ref=str(latest_id),
-            sha256=f"telegram-bootstrap-{latest_id}", page_count=0, mode="bootstrap", row_count=0,
-        ))
-        session.commit()
-        return
-
-    since_id = int(prev.external_ref or 0)
-    posts = telegram_source.fetch_new_posts(since_id)
+    if prev is None or prev.mode == "bootstrap":
+        # first real run (or a leftover no-op bootstrap row from before this
+        # was date-bounded): catch up on recent history rather than only
+        # alerting on posts from here forward. Bounded by date, not the
+        # channel's entire history, since old appointment dates are no
+        # longer relevant and this channel is very active.
+        since_date = datetime.now(timezone.utc) - timedelta(days=RENEWAL_BACKFILL_DAYS)
+        log.info("[telegram_renewal] First run -- backfilling posts since %s", since_date.date())
+        posts = telegram_source.fetch_posts_since(since_date)
+    else:
+        since_id = int(prev.external_ref or 0)
+        posts = telegram_source.fetch_new_posts(since_id)
 
     if not posts:
-        log.info("[telegram_renewal] No new posts since message id %d.", since_id)
+        log.info("[telegram_renewal] No new posts found.")
         return
 
-    log.info("[telegram_renewal] %d new post(s) since message id %d", len(posts), since_id)
+    log.info("[telegram_renewal] %d post(s) to process", len(posts))
 
     for post in posts:
         all_rows = []
