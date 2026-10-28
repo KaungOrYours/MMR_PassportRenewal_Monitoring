@@ -93,6 +93,16 @@ class MatchRecord(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+def delete_watchlist_entry(session, entry: "Watchlist") -> None:
+    """Deletes a Watchlist row safely. watchlist_id on MatchRecord has no
+    ondelete=CASCADE (and no ORM cascade relationship either), so deleting
+    the parent row directly would violate the foreign key constraint for
+    anyone who already has a recorded match -- callers must not just
+    session.delete(entry) on its own."""
+    session.query(MatchRecord).filter_by(watchlist_id=entry.id).delete()
+    session.delete(entry)
+
+
 class WebAuthnCredential(Base):
     """A registered Passkey (Face ID/Touch ID-backed). Each device the
     admin enrolls gets its own row -- there is no username/password, the

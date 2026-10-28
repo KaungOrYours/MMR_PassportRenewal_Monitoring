@@ -87,8 +87,9 @@ duplicated.
 Every few hours, automatically, around the clock.
 
 **Can I remove my information?**
-Yes — message the bot or reach out to the project directly to request
-removal.
+Yes — send `/delete` to the bot on Telegram and your information is removed
+immediately, no waiting required. You can also reach out to the project
+directly if you'd rather not use the bot.
 
 **Is this run by the embassy?**
 No. This is an independent, volunteer, non-commercial community project. It

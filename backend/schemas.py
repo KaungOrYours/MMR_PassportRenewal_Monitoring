@@ -3,6 +3,29 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+# A real Telegram chat/user ID -- the number the bot replies with on /start --
+# is purely numeric. People commonly paste their phone number or @username
+# into this field instead, which looks plausible but will never actually
+# receive a message (the Bot API needs this exact numeric ID for a private
+# chat, not a username or phone number). Checked in main.py (not a pydantic
+# field_validator) so the error response stays a clean HTTPException(400,
+# "...") like every other validation check here, not FastAPI's default
+# verbose 422 body shape.
+TELEGRAM_CHAT_ID_RE = re.compile(r"^\d{5,15}$")
+
+TELEGRAM_CHAT_ID_FORMAT_ERROR = (
+    'That doesn\'t look like a Telegram ID -- it should be only digits (e.g. "123456789"), not a phone number '
+    'or @username. Tap "Connect Telegram" and paste the number the bot replies with.'
+)
+
+
+def is_valid_telegram_chat_id(value: str | None) -> bool:
+    """Emptiness is a separate, already-handled concern -- this only
+    checks the format of a non-empty value."""
+    if not value:
+        return True
+    return bool(TELEGRAM_CHAT_ID_RE.fullmatch(value.strip()))
+
 
 def mask_passport(passport: str | None) -> str | None:
     """Server-side masking so the raw API response never carries the full

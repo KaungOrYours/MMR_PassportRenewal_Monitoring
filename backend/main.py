@@ -17,8 +17,9 @@ from checker.notify import send_message
 from .auth import get_db, require_session, webhook_secret
 from .ratelimit import rate_limit
 from .schemas import (
-    EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut, PublicStats, PublicStatusOut,
-    SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, mask_name, mask_passport, mask_telegram_id,
+    TELEGRAM_CHAT_ID_FORMAT_ERROR, EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut,
+    PublicStats, PublicStatusOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, is_valid_telegram_chat_id,
+    mask_name, mask_passport, mask_telegram_id,
 )
 from .telegram_webhook import router as telegram_router
 from .webauthn_routes import router as webauthn_router
@@ -126,6 +127,8 @@ def create_watchlist(payload: WatchlistIn, session: Session = Depends(get_db)):
         raise HTTPException(400, "You must accept the Terms & Conditions to register.")
     if not payload.telegram_chat_id:
         raise HTTPException(400, "A Telegram ID is required so we can actually notify you.")
+    if not is_valid_telegram_chat_id(payload.telegram_chat_id):
+        raise HTTPException(400, TELEGRAM_CHAT_ID_FORMAT_ERROR)
 
     # re-submitting the same details (e.g. revisiting the site) retrieves
     # the existing registration instead of creating a duplicate -- matches
@@ -263,7 +266,10 @@ def update_watchlist(entry_id: int, payload: WatchlistUpdate, session: Session =
     entry = session.get(models.Watchlist, entry_id)
     if entry is None:
         raise HTTPException(404, "Not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    if "telegram_chat_id" in updates and not is_valid_telegram_chat_id(updates["telegram_chat_id"]):
+        raise HTTPException(400, TELEGRAM_CHAT_ID_FORMAT_ERROR)
+    for field, value in updates.items():
         setattr(entry, field, value)
     session.commit()
     session.refresh(entry)
@@ -275,7 +281,7 @@ def delete_watchlist(entry_id: int, session: Session = Depends(get_db)):
     entry = session.get(models.Watchlist, entry_id)
     if entry is None:
         raise HTTPException(404, "Not found")
-    session.delete(entry)
+    models.delete_watchlist_entry(session, entry)
     session.commit()
 
 

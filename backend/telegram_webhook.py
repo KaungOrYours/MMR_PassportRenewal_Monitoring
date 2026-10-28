@@ -48,21 +48,39 @@ async def telegram_webhook(
     if not chat_id:
         return {"ok": True}
 
+    text_sent = (message.get("text") or "").strip().lower()
+    # Telegram sometimes suffixes a command with the bot's own username
+    # (e.g. "/delete@MMR_PassportRenewalMonitoringBot") in group contexts;
+    # strip that off rather than requiring an exact match.
+    command = text_sent.split("@")[0].split()[0] if text_sent.startswith("/") else ""
+
     existing = db.query(models.Watchlist).filter_by(telegram_chat_id=chat_id).first()
 
     try:
+        if command == "/delete":
+            if existing is not None:
+                models.delete_watchlist_entry(db, existing)
+                db.commit()
+                reply = "🗑️ Your information has been deleted from our system. You can sign up again anytime."
+            else:
+                reply = "We don't have any information registered under this Telegram ID."
+            send_message(reply, chat_id=chat_id)
+            return {"ok": True}
+
         if existing is not None:
             base = _frontend_base()
             link = f"{base}/status/{existing.lookup_token}" if base and existing.lookup_token else None
             text = (
                 f"👋 Welcome back, {html.escape(existing.full_name)} — you're already registered."
                 + (f"\n\nCheck your status anytime: {link}" if link else "")
+                + "\n\nSend /delete anytime to remove your information from our system."
             )
         else:
             text = (
                 "👋 Thanks for starting a chat with the MMR Passport Renewal Monitor bot.\n\n"
                 f"Your Telegram ID is:\n<code>{chat_id}</code>\n\n"
-                "Copy this into the \"Your Telegram ID\" field on the signup form to finish registering."
+                "Copy this into the \"Your Telegram ID\" field on the signup form to finish registering.\n\n"
+                "Once registered, you can send /delete anytime to remove your information from our system."
             )
         send_message(text, chat_id=chat_id)
     except Exception:
