@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import AuthGate from './auth/AuthGate'
+import { LanguageToggle, useLanguage } from './i18n/LanguageContext'
 import AlertsView from './views/AlertsView'
 import ListsView from './views/ListsView'
 import PublicAlertsView from './views/PublicAlertsView'
@@ -26,9 +27,12 @@ function AdminDashboard() {
   return (
     <AuthGate>
       <div className="mx-auto max-w-4xl px-4 py-8">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold">MMR Passport Renewal Monitor — Admin</h1>
-          <p className="text-sm text-neutral-500">Tracks the Myanmar Embassy Singapore approval list</p>
+        <header className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">MMR Passport Renewal Monitor — Admin</h1>
+            <p className="text-sm text-neutral-500">Tracks the Myanmar Embassy Singapore approval list</p>
+          </div>
+          <LanguageToggle />
         </header>
 
         <nav className="mb-6 flex gap-1 border-b border-neutral-200 dark:border-neutral-800">
@@ -56,10 +60,10 @@ function AdminDashboard() {
 }
 
 const PUBLIC_TABS = [
-  { id: 'signup', label: 'Sign Up', component: SignupView },
-  { id: 'lists', label: 'Lists', component: ListsView },
-  { id: 'alerts', label: 'Alerts', component: PublicAlertsView },
-  { id: 'status', label: 'Status', component: PublicStatusView },
+  { id: 'signup', component: SignupView },
+  { id: 'lists', component: ListsView },
+  { id: 'alerts', component: PublicAlertsView },
+  { id: 'status', component: PublicStatusView },
 ] as const
 
 type PublicTabId = (typeof PUBLIC_TABS)[number]['id']
@@ -67,6 +71,7 @@ type PublicTabId = (typeof PUBLIC_TABS)[number]['id']
 function PublicApp() {
   const [tab, setTab] = useState<PublicTabId>('signup')
   const [totalUsers, setTotalUsers] = useState<number | null>(null)
+  const { t } = useLanguage()
   const Active = PUBLIC_TABS.find((t) => t.id === tab)!.component
 
   useEffect(() => {
@@ -75,29 +80,30 @@ function PublicApp() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold">MMR Passport Renewal Monitor</h1>
-        <p className="text-sm text-neutral-500">
-          Get notified on Telegram the moment your name appears on the Myanmar Embassy Singapore's passport
-          approval or renewal appointment lists.
-        </p>
-        {totalUsers !== null && (
-          <p className="text-xs text-neutral-400 mt-1">{totalUsers} people are using this service</p>
-        )}
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">{t.appTitle}</h1>
+          <p className="text-sm text-neutral-500">{t.heroDescription}</p>
+          <p className="text-xs text-neutral-400 mt-1">{t.scheduleNote}</p>
+          {totalUsers !== null && (
+            <p className="text-xs text-neutral-400 mt-1">{t.peopleUsing(totalUsers)}</p>
+          )}
+        </div>
+        <LanguageToggle />
       </header>
 
       <nav className="mb-6 flex gap-1 border-b border-neutral-200 dark:border-neutral-800">
-        {PUBLIC_TABS.map((t) => (
+        {PUBLIC_TABS.map((pt) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={pt.id}
+            onClick={() => setTab(pt.id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.id
+              tab === pt.id
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
             }`}
           >
-            {t.label}
+            {t.tabs[pt.id]}
           </button>
         ))}
       </nav>
