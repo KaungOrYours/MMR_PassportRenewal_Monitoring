@@ -1,6 +1,61 @@
 export type Language = 'en' | 'my'
 
-export const translations = {
+export interface TranslationShape {
+  appTitle: string
+  heroDescription: string
+  scheduleNote: string
+  peopleUsing: (count: number) => string
+  tabs: { signup: string; lists: string; alerts: string; status: string }
+  form: {
+    fullName: string
+    fullNamePlaceholder: string
+    passportNumber: string
+    passportPlaceholder: string
+    telegramIdLabel: string
+    telegramRequired: string
+    telegramIdPlaceholder: string
+    connectTelegram: string
+    telegramHelpPrefix: string
+    telegramHelpStart: string
+    telegramHelpSuffix: string
+    telegramHelpBold: string
+    telegramHelpTail: string
+    note: string
+    submit: string
+    submitting: string
+    hintNoTelegram: string
+    hintNoTerms: string
+    hintNoName: string
+    telegramInvalidFormat: string
+  }
+  terms: {
+    heading: string
+    p1: string
+    p1Bold: string
+    p1Tail: string
+    p2Bold: string
+    p2: string
+    p2Bold2: string
+    p2Tail: string
+    p3Bold: string
+    p3: string
+    p4Bold: string
+    p4: string
+    p5: string
+    checkbox: string
+  }
+  done: {
+    onList: string
+    explain: string
+    sentOk: string
+    sentFailPrefix: string
+    sentFailHelp: string
+    bookmarkNote: string
+    addAnother: string
+  }
+}
+
+export const translations: Record<Language, TranslationShape> = {
   en: {
     appTitle: 'MMR Passport Renewal Monitor',
     heroDescription:
@@ -129,6 +184,4 @@ export const translations = {
       addAnother: 'နောက်တစ်ဦး ထပ်ထည့်ရန်',
     },
   },
-} as const
-
-export type TranslationShape = typeof translations.en
+}
