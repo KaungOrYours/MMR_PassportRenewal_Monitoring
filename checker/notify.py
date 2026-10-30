@@ -29,6 +29,13 @@ def send_message(text: str, chat_id: str | None = None, parse_mode: str = "HTML"
     return _call("sendMessage", chat_id=chat_id, text=text, parse_mode=parse_mode, disable_web_page_preview=True)
 
 
+def get_chat(chat_id: str) -> dict:
+    """Asks Telegram whether the bot can actually reach this chat. Raises the
+    same RuntimeError send_message would, so an unreachable ID can be found
+    before an alert is riding on it."""
+    return _call("getChat", chat_id=chat_id)
+
+
 def send_document(file_path: str, caption: str = "", chat_id: str | None = None) -> dict:
     chat_id = chat_id or os.environ["TELEGRAM_CHAT_ID"]
     token = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -100,3 +107,23 @@ def format_renewal_heartbeat(row_count: int, photo_count: int, match_count: int)
         f"{row_count} entries across {photo_count} image(s).\n"
         f"{status} against your watchlist."
     )
+
+
+def format_delivery_failures(failures: list[str]) -> str:
+    """Operator-facing report. A match that was found but could not be
+    delivered is the worst possible failure mode for this tool -- the person
+    is on the list, the system knows it, and they were never told -- so it
+    gets its own explicit message rather than only a line in the CI log."""
+    lines = [
+        "⚠️ <b>Could not deliver some alerts</b>",
+        "These people have a recorded match but have not received it:",
+    ]
+    for failure in failures:
+        lines.append(f"- {html.escape(failure)}")
+    lines.append(
+        "\nEach one stays pending and is retried on every run. "
+        "<i>chat not found</i> normally means the stored Telegram ID is wrong, "
+        "or the person never pressed Start in the bot -- correct the ID in /admin "
+        "and the pending alert will go out on the next run."
+    )
+    return "\n".join(lines)

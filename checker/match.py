@@ -38,6 +38,13 @@ _CONFUSABLE_FOLD = str.maketrans({
     "G": "6",
 })
 
+# The inverse fold, for names rather than identifiers: a digit inside a name
+# is always an OCR slip (no name in these documents contains one), so "MOE
+# NYUNT 00" is "MOE NYUNT OO". Applied to both sides before comparing, so it
+# can only ever bring the same person's two spellings together -- it cannot
+# merge two different names, which all differ by whole words, not digits.
+_NAME_DIGIT_FOLD = str.maketrans({"0": "O", "1": "I", "5": "S", "8": "B"})
+
 NAME_MATCH_THRESHOLD = 88
 
 
@@ -63,8 +70,8 @@ def fold_confusables(identifier: str) -> str:
 
 
 def names_plausibly_match(watch_name: str, row_name: str) -> tuple[bool, int]:
-    a = normalize_name(watch_name)
-    b = normalize_name(row_name)
+    a = normalize_name(watch_name).translate(_NAME_DIGIT_FOLD)
+    b = normalize_name(row_name).translate(_NAME_DIGIT_FOLD)
     if not a or not b:
         return False, 0
     # spaces-removed exact check catches OCR/typo word-splitting, e.g.

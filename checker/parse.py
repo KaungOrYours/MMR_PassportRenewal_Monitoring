@@ -23,7 +23,13 @@ DATE_RE = re.compile(r"\b(\d{1,2}\s?[/-]\s?\d{1,2}\s?[/-]\s?\d{4})\b")
 # Index markers: "1.", "12,", "1။" (post Burmese-digit-normalization), OCR table pipes "1. |"
 INDEX_RE = re.compile(r"^\s*(\d{1,3})\s*[.|,၊။]", re.MULTILINE)
 LEADING_INDEX_RE = re.compile(r"^\s*\d{1,3}\s*[.|,၊။]?\s*\|?\s*")
-TABLE_NOISE_RE = re.compile(r"[|│]")
+# A table's vertical rule survives OCR as whatever glyph it happens to
+# resemble -- "|" most often, but "{", "/", "[" and friends turn up just as
+# readily in the @mesg15 photos. Left in place they prefix the name ("{LU
+# SENG"), which drags token_sort_ratio below the match threshold and silently
+# loses a real person. Names in these documents never legitimately contain
+# any of these characters.
+TABLE_NOISE_RE = re.compile(r"[|│¦‖{}\[\]()<>/\\]")
 
 
 @dataclass
@@ -63,7 +69,7 @@ def normalize_text(text: str) -> str:
 
 def normalize_name(name: str) -> str:
     name = TABLE_NOISE_RE.sub(" ", name)
-    name = re.sub(r"\s+", " ", name).strip(" .,:-")
+    name = re.sub(r"\s+", " ", name).strip(" .,:;-_'\"*~^`")
     return name.upper()
 
 

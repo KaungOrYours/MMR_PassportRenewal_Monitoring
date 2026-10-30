@@ -217,6 +217,34 @@ cp .env.example .env.local   # fill in VITE_API_BASE
 npm run dev
 ```
 
+## Diagnostics
+
+When someone reports "my name is on the list but I was never told," run the
+**Diagnose** workflow (Actions -> Diagnose -> Run workflow) rather than
+guessing. It is read-only: it writes nothing to the database and never moves
+the checker's watermark, so it is safe to run alongside the schedule.
+
+| Command | Answers |
+| --- | --- |
+| `pending` | Which matches were recorded but never actually delivered (`matches.notified_at IS NULL`). The next scheduled run retries all of them automatically. |
+| `verify-chats` | Which stored Telegram IDs the bot genuinely cannot message. A correctly formatted ID can still be undeliverable ("chat not found") if it is the wrong number or the person never pressed Start -- fix those in `/admin` and the pending alert goes out on the next run. |
+| `inspect` | Whether OCR and the parser actually read a given post's images. Takes a post's Telegram message id (`post` input) and optionally a **watchlist id** to search for. Works on posts the watermark has already passed. |
+
+Because this repo is public, Actions logs *and* workflow inputs are
+world-readable. The CLI therefore prints only counts, parser statistics and
+redacted line shapes (letters -> `A`, digits -> `9`); names, passport
+fragments and chat IDs are sent to the operator's own Telegram chat instead.
+**Identify a person by their watchlist id, never by typing their name into a
+workflow input.**
+
+Same thing locally, with the checker's env vars set:
+
+```bash
+python -m checker.diagnose pending
+python -m checker.diagnose verify-chats
+python -m checker.diagnose inspect --post 228 --watchlist-id 42
+```
+
 ## Known data-format quirks (why the parsers are written the way they are)
 
 ### Embassy website PDF (`checker/parse.py`)
@@ -243,6 +271,23 @@ npm run dev
   true for a different person.
 - The table uses a bare numeric index (no `.`/`။` punctuation) and one
   appointment date per image, applied to every row on that image.
+- These are photos of a **bordered** table, and the border is what breaks
+  OCR. The vertical rule reads back as `|`, `{`, `/` or `[` and sticks to
+  the name (`{LU SENG`); the redaction `*` reads as `°` or `+`; digits read
+  as letters (`MHO01**98` for `MH01**98`); and `PV` reads as `Pv`. Each of
+  these silently cost real rows or real matches, so the parser matches a
+  tolerant shape and canonicalizes afterwards rather than expecting clean
+  text. See `memory.md` for the measurements behind each one.
+- **Integrity is checked against the list's own row numbers**
+  (`RenewalRow.index_no`), not the index-marker count -- the border glues
+  the number to the name, so marker counting sees ~0 markers against 30 real
+  rows and can never fire. The lists number consecutively, so a hole in the
+  sequence is proof a row was lost, checked per image and across the whole
+  post. Image 1 of a post is a notice/cover page and legitimately has no
+  rows; that is only treated as benign when the numbering independently
+  comes out complete.
+- Retry OCR with `--psm 11` or `--psm 3`, never `--psm 6`: on these images
+  psm 6 returns near-empty output and recovers zero rows.
 - `t.me/s/<channel>` (the public no-login preview) serves **downscaled,
   recompressed** photos -- OCR accuracy on those is visibly worse. The
   checker instead uses Telegram's client API (Telethon) to fetch the

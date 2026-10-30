@@ -90,3 +90,35 @@ def fetch_posts_since(since_date: datetime, limit: int = 1000) -> list[RenewalPo
         # inclusive/exclusive behavior of offset_date+reverse
         messages = [m for m in messages if m.date >= since_date]
         return _group_into_posts(client, messages)
+
+
+def fetch_post_group(message_id: int, window: int = 30) -> list[RenewalPost]:
+    """Re-fetches one specific post by message id, including the rest of its
+    album. Used by the diagnostics CLI to re-examine a post the scheduled run
+    has already moved its watermark past (fetch_new_posts can never see it
+    again). The album's sibling messages sit on consecutive ids either side of
+    the one given, so a small id window around it is enough to rebuild the
+    whole group.
+    """
+    with _client() as client:
+        ids = list(range(max(1, message_id - window), message_id + window + 1))
+        messages = [m for m in client.get_messages(CHANNEL, ids=ids) if m is not None]
+        target = next((m for m in messages if m.id == message_id), None)
+        if target is None:
+            return []
+        if target.grouped_id is None:
+            group = [target]
+        else:
+            group = [m for m in messages if m.grouped_id == target.grouped_id]
+        return _group_into_posts(client, group)
+
+
+def fetch_recent_posts(count: int = 3) -> list[RenewalPost]:
+    """The most recent `count` photo posts, oldest first, regardless of the
+    stored watermark. Diagnostics only -- the scheduled run must keep using
+    fetch_new_posts so it never re-processes a post."""
+    with _client() as client:
+        messages = list(client.iter_messages(CHANNEL, limit=count * 15))
+        messages.reverse()
+        posts = _group_into_posts(client, messages)
+        return posts[-count:]

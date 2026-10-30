@@ -155,6 +155,58 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
 - **Full names are stored and shown in ALL CAPS**, matching how names appear
   on Myanmar passports and on the embassy's own lists (avoids a mismatch
   between "as entered" casing and "as displayed on official documents").
+- **A real Telegram chat ID is validated as purely numeric (5-15 digits)
+  server-side**, on both signup and admin edit (`backend/schemas.py::
+  is_valid_telegram_chat_id`). People were pasting their phone number or
+  `@username` into the ID field — it looked plausible but could never
+  receive a message. Rejected with a clean `HTTPException(400, "...")`
+  matching this codebase's existing validation style, not pydantic's
+  default verbose 422 body.
+- **`/delete` sent to the bot removes the sender's own watchlist entry
+  immediately**, identified by their `telegram_chat_id` — makes the
+  long-standing "you may request removal anytime" promise in the Terms
+  concrete instead of requiring a manual message to the developer.
+  `checker/db.py::delete_watchlist_entry()` deletes dependent
+  `MatchRecord` rows first and is used by both this command and the
+  admin "Remove" button — see debugging history below for why that
+  matters.
+- **The public site has an English/Burmese language toggle**
+  (`frontend/src/i18n/`), a lightweight React context + localStorage
+  choice, not an external i18n library — the app only has a handful of
+  pages to cover. `TranslationShape` must be a plain interface (explicit
+  `string` fields), not derived via `typeof translations.en` off an
+  `as const` object — see debugging history below, this broke the
+  Vercel build once already. Burmese strings for the hero, nav tabs,
+  form labels, and Terms & Conditions are the user's own translation;
+  everything else (confirmation screens, placeholders) was translated by
+  Claude and has not been reviewed by a native speaker.
+- **Alert delivery is a separate stage from matching, keyed on
+  `MatchRecord.notified_at`** (`checker/main.py::deliver_pending_alerts`),
+  not a send inside the per-post matching loop. Recording a match is what
+  makes the dedup check skip that person next run, so sending from inside
+  that loop meant a failed send left a committed "match" that was never
+  delivered and never retried -- see debugging history. Delivery now runs
+  after both checks, once per run (**including runs where neither source
+  published anything new**, so a previously failed alert still gets another
+  chance), is per-recipient fault-isolated, and stamps `notified_at` only
+  once Telegram has accepted the message. Operator-facing messages
+  (heartbeat, integrity warning, the PDF document) go through `_try_send`
+  /`_try_send_document` so a reporting failure can never abort real work.
+  An alert for a past match is rebuilt from the stored `Entry` row via
+  `_match_view()` -- no re-OCR needed to retry.
+- **A watchlist entry with no `telegram_chat_id` of its own deliberately
+  falls back to the operator's chat** (documented on
+  `Watchlist.telegram_chat_id`) so an admin-created entry predating the
+  Telegram field gets relayed by hand rather than dropped. Public signup
+  always sets one, so this only affects admin-created rows -- don't
+  "fix" it into a hard error.
+- **`checker/diagnose.py` is read-only and prints no PII.** This repo is
+  public, so GitHub Actions logs *and* `workflow_dispatch` inputs are
+  world-readable. The CLI prints counts, parser statistics and redacted
+  line *shapes* (`_shape()`: letters -> `A`, digits -> `9`) only; every
+  name, passport fragment and chat ID is sent to the operator's own
+  Telegram chat instead. People are identified by **watchlist id**, never
+  by typing a name into a workflow input, for the same reason.
 - **One-tap "Connect Telegram" button, not a phone-number-based auto-reply.**
   Telegram's Bot API fundamentally cannot message a user who hasn't first
   started a conversation with the bot — there is no way to target someone by
@@ -194,6 +246,46 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
   to also match, which is effectively never true for a genuinely different
   person.
 - One appointment date per image, applied to every row on that image.
+- **These are photos of a *bordered* table, and the border is what breaks
+  OCR.** Verified against two real post images on 31 Oct 2026; every item
+  here was silently mis-parsing before:
+  - The vertical rule comes back as `|`, `{`, `/`, `[` -- whatever it
+    happens to resemble. Left attached it prefixes the name (`{LU SENG`),
+    dropping `token_sort_ratio` to ~53 and **failing the name gate that the
+    renewal list requires**, so a correctly-read passport still produced no
+    alert. `TABLE_NOISE_RE` (`parse.py`) now covers all of them.
+  - The redaction `*` is read as `°`, `+` or another stray mark, and digits
+    come back as letters (`O`/`I`/`S`/`B` for `0`/`1`/`5`/`8`), sometimes
+    with an extra character spliced in -- `MHO01**98` for `MH01**98`. The
+    old strict `\b(AA)\s?(99)\*{1,2}(99)\b` dropped those rows entirely.
+    `MASKED_PASSPORT_RE` now matches a tolerant shape and canonicalizes in
+    `canonical_masked_passport()`.
+  - Digits inside a *name* are always an OCR slip (`MOE NYUNT 00`), so
+    `names_plausibly_match` folds `0/1/5/8` back to `O/I/S/B` -- the inverse
+    of `fold_confusables`, which is for identifiers. Applied to both sides,
+    so it can only pull one person's two spellings together; different
+    people in these lists differ by whole words, never by a digit.
+  - `PV` is frequently read as `Pv`, so `TYPE_CODE_RE` is case-insensitive.
+    Before this the alert said "PJ -> ?" instead of "PV -> PJ".
+- **The index-marker integrity check is blind on this format.** `INDEX_RE`
+  needs `99 NAME`, but the border glues them (`91 |MI KAY THI AUNG`), so it
+  counts 0-1 markers against 30 real rows and `row_count < marker_count`
+  never fires. The reliable signal is the list's **own row numbers**, now
+  captured as `RenewalRow.index_no`: these lists number consecutively, so a
+  hole in the sequence is proof a row was lost (`missing_indexes`), checked
+  both per-image and across the whole post (a post's images continue one
+  1..N run, so a row lost at an image boundary is only visible post-wide).
+- **Image 1 of a post is a notice/cover page, not a table** -- 0 rows is
+  correct for it. `checker/main.py` suppresses the `zero_rows_extracted`
+  flag for it *only* when the post's row numbering comes out complete and
+  starting at 1, i.e. only when the numbering independently proves nothing
+  was lost. Do not weaken that condition: an unconditional "ignore image 1"
+  would re-create the silent-loss bug this whole section is about.
+- **`--psm 6` is the worst possible retry for these images.** Measured:
+  ~120 chars of output vs ~920 at `--psm 4`, and **0 rows recovered, every
+  time**. The retry ladder is `11` (sparse text) then `3` (full auto);
+  both recover these tables fully. (`parse.py`'s separate note that psm 4
+  beats psm 6 for the embassy PDF is the same underlying lesson.)
 
 ### Both sources
 - A per-page/per-image integrity check compares the count of index markers
@@ -202,6 +294,18 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
   (`extraction_issues` table) and surfaced as a warning rather than silently
   treated as "no match." The explicit design rule: **never report "you are
   not on the list" when extraction was incomplete.**
+- **`has_gap` also fires on `row_count == 0`, not just `row_count <
+  index_marker_count`.** A page where OCR fails completely returns 0 rows
+  AND 0 index markers, and `0 < 0` is `False` — so a total failure was
+  silently indistinguishable from a genuinely empty page: no retry, no
+  `extraction_issues` row, no trace anywhere. Confirmed in production: page
+  1 of every multi-photo `@mesg15` post was silently missing this way. For
+  `checker/parse.py` (embassy PDF), this check is scoped to OCR mode only
+  (`mode == "ocr"` in `checker/main.py`) — a text-layer PDF page can
+  legitimately have zero rows (e.g. a trailing blank/signature page), so
+  applying it unconditionally produced a false positive on a real
+  golden-file PDF during testing. `checker/parse_renewal.py` (always OCR,
+  no text-layer equivalent) has no such exception.
 
 ## Debugging history worth remembering
 
@@ -224,16 +328,117 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
 - **Vercel/CDN cache staleness was mistaken for a real bug** more than once
   during deploy verification via `curl` cache-busting. Asking the user to
   check the Vercel dashboard directly resolved it faster than continued
-  polling.
+  polling. Also seen with GitHub's **Contributors graph** after a
+  force-push/history rewrite — it's a separately-cached, periodically
+  regenerated page, not live; verify actual repo state with `git log`
+  (author/committer identity, not just message trailers), not that page.
+- **The "NI LAR" missing-name report traced back to the zero-rows
+  integrity-check gap above, not a watchlist/matching bug.** User-reported
+  "an easy name I can't find" turned out to be a real name ("NILAR," not
+  "NI LAR" — OCR/spacing difference the fuzzy matcher already handles via
+  its spaces-removed exact check) on a different post than the one with the
+  missing page. Diagnosed by querying `snapshots`/`entries`/
+  `extraction_issues` directly against the production DB: the suspect
+  post's `page_count` didn't match its distinct `page_no` values in
+  `entries`, with zero corresponding `extraction_issues` rows — the exact
+  silent-failure signature. If a similar "I can't find X" report recurs,
+  check `entries` page coverage against `snapshots.page_count` before
+  assuming a matching-logic bug.
+- **A Vercel build failure from `frontend/src/i18n/translations.ts` traced
+  back to `as const` + a type derived via `typeof translations.en`.**
+  Indexing by a runtime `Language` union (`translations[language]`)
+  produces `typeof translations.en | typeof translations.my`, which isn't
+  assignable to the narrower `en`-only literal type — Burmese's different
+  string literals don't satisfy English's. Fixed by making `TranslationShape`
+  an explicit interface (plain `string` fields) both languages are checked
+  against, not derived from one of them. **Separately important: `npx tsc
+  --noEmit` did NOT catch this locally before pushing** — this frontend's
+  `tsconfig.json` is solution-style (`"files": []`, only `references`), so
+  bare `tsc --noEmit` checks nothing meaningful. The actual build is `tsc -b
+  && vite build` (`npm run build`, matches `package.json` and what Vercel
+  runs) — **always verify frontend changes with `npm run build`, not `tsc
+  --noEmit`, in this repo.**
+- **Deleting a `Watchlist` row that already had a match recorded would throw
+  a foreign-key violation** — `MatchRecord.watchlist_id` has no
+  `ondelete=CASCADE` and no ORM cascade relationship. Pre-existing bug in
+  the admin "Remove" button, found incidentally while building the
+  `/delete` bot command (which hits the same path). Fixed once, in
+  `checker/db.py::delete_watchlist_entry()`, used by both callers.
+- **The renewal parser was silently losing ~20% of every list**, which is
+  what "my name is on the list but the tool can't find me" actually turned
+  out to be (alongside the delivery bug below). Measured on two real post
+  images: 1 of 30 and 1 of 10 rows dropped outright by the strict masked-
+  passport regex, plus 4 more of 30 whose names kept a table-border prefix
+  or an OCR digit and so failed the name gate -- 6 of 30 people on one image
+  who would never have been alerted. **None of it raised an integrity
+  warning**, because the index-marker check cannot see these tables (above).
+  After the fixes: 30/30 and 10/10 rows parsed, every name matchable, no
+  false positives, and the different-person rejection (`KAUNG HTET` vs
+  `KAUNG HTET KYAW`) still holds -- that pair is the regression guard,
+  since loosening name normalization is exactly what could reopen the
+  false-positive hole `token_set_ratio` was dropped for.
+- **One undeliverable Telegram chat ID aborted an entire check run and
+  silently destroyed that person's alert.** Symptom (Oct 30 run):
+  `RuntimeError: Telegram API error (400): Bad Request: chat not found`
+  raised from `notify.send_message` inside `run_telegram_renewal_check`'s
+  notification loop, logged as `[telegram_renewal] Check failed`, exit code
+  1. Three separate consequences, all from the one 400:
+  (1) the exception escaped the `for post in posts` loop, so of "3 post(s)
+  to process" the third was **never fetched, parsed, matched or stored** --
+  a name on that post simply did not exist in the DB, which reads exactly
+  like a matching bug;
+  (2) the `MatchRecord` had already been committed *before* the send, so the
+  dedup check (`if existing: continue`, commented "already notified") treated
+  that person as done forever -- **the alert was never retried**, the system
+  knew they were on the list and never told them;
+  (3) the heartbeat and integrity warning for that post were skipped too.
+  Fixed by splitting delivery out into `deliver_pending_alerts` (see key
+  decisions). Note the Telegram-ID *format* validation added earlier cannot
+  prevent this: "chat not found" means a well-formed ID that the bot still
+  can't message (wrong number, or the person never pressed Start).
+  `python -m checker.diagnose verify-chats` finds these before an alert
+  depends on them.
+- **Git history was rewritten twice** (`git filter-branch`, not
+  `filter-repo` — not installable without `--break-system-packages` on this
+  machine's managed Python) to (1) scrub a real personal Telegram chat ID
+  that had been committed in the README since the very first commit, and
+  (2) strip `Co-Authored-By: Claude` / `Claude-Session` trailers so only
+  the user's own identity appears as a contributor — done twice because the
+  second rewrite was needed after several more commits re-added the
+  trailer out of habit. **Every commit hash in the repo changed as a
+  result** — any other local clone needs to re-fetch/re-clone, not pull.
+  Standing rule going forward: never add those trailers to commits in this
+  repo at all, in any session.
 
 ## Current live configuration (as of this writing)
 
 - Bot: `@MMR_PassportRenewalMonitoringBot`.
-- Matching policy: passport-number alone is sufficient; name is informational.
+- Matching policy: embassy PDF (`match_row`) — passport-number alone is
+  sufficient, name is informational. `@mesg15` renewal list
+  (`match_renewal_row`) — **both** the masked passport's visible digits and
+  a plausible name match are required (see "Key decisions" above for why
+  these two sources are deliberately different).
+- Telegram ID format is validated server-side (5-15 digits only) on signup
+  and admin edit; a phone number or `@username` is rejected with a clear
+  error instead of silently failing to ever send a message.
+- Sending `/delete` to the bot removes a person's own watchlist entry
+  immediately, no admin action needed.
+- Public site has an English/Burmese toggle (top-right of the public
+  header); admin dashboard also has the toggle but its content isn't
+  translated.
 - Public routes: `/` (signup + Lists/Alerts/Status tabs), `/status/<token>`.
   Admin-only: `/admin` (Passkey-gated).
-- Signup now requires, server-side-enforced: non-empty `telegram_chat_id` and
-  `terms_accepted: true` (see `backend/main.py::create_watchlist`).
+- Two GitHub Actions workflows besides tests: **Check passport approval
+  list** (`check.yml`, cron every 3h + manual) and **Diagnose**
+  (`diagnose.yml`, manual only) which runs `checker/diagnose.py`
+  read-only: `pending` (matches recorded but never delivered),
+  `verify-chats` (which stored Telegram IDs the bot genuinely cannot
+  reach), `inspect` (re-OCR a specific post by message id -- works on
+  posts the watermark has already passed, via
+  `telegram_source.fetch_post_group`).
+- Signup now requires, server-side-enforced: non-empty, numeric-format
+  `telegram_chat_id` and `terms_accepted: true` (see
+  `backend/main.py::create_watchlist`).
 
 ## Open/pending items not yet confirmed resolved
 
@@ -243,5 +448,29 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
   should be removed via the admin Watchlist "Remove" button if they still
   exist — worth a one-time check.
 - No automated test suite exists for `backend/` (only `checker/tests/`
-  currently exists, 23 passing tests). Backend changes are currently verified
-  by ad hoc `TestClient` scripts rather than a committed suite.
+  currently exists, 37 passing tests). Backend changes are currently
+  verified by ad hoc scripts rather than a committed suite.
+- At least one active watchlist entry has a Telegram ID the bot cannot
+  reach ("chat not found" on the Oct 30 run). Its alert is now kept
+  pending and retried rather than lost, but it will keep failing until
+  the ID is corrected in `/admin`; `diagnose verify-chats` identifies
+  which entry.
+- **Page 1 of the Oct 19 `@mesg15` renewal post (post_id 177) is still
+  missing from the database** — the integrity-check fix above prevents this
+  going forward, but doesn't retroactively recover already-processed posts.
+  The watermark has already moved past it, so a normal cron run won't
+  re-fetch it; recovering it needs a manual re-fetch of that specific
+  message group via Telethon (requires `TELEGRAM_API_ID`/`HASH`/
+  `SESSION_STRING`), not yet done. `telegram_source.fetch_post_group(177)`
+  (added for `diagnose inspect`) can now re-fetch it for *inspection*, but
+  there is still no write path that back-fills an already-stored snapshot
+  -- re-inserting would collide with `snapshots.sha256`'s unique constraint,
+  and deleting the old snapshot would break `matches.entry_id`/`snapshot_id`
+  (no `ondelete=CASCADE`).
+- Burmese translations beyond the user's own provided text (hero, nav tabs,
+  form labels, Terms & Conditions) — i.e. the post-signup confirmation
+  screen, placeholders, and button labels — were machine-translated by
+  Claude and have not been reviewed by a native speaker.
+- `TELEGRAM_WEBHOOK_SECRET` may still be unset on Render (falls back to
+  `API_SECRET`, which still works but means that secret isn't fully
+  bootstrap-only yet) — worth confirming it's been set.

@@ -1,0 +1,76 @@
+# Manual, read-only diagnostics. Writes nothing to the database and never
+# moves the watermark, so it is safe to run at any time alongside the
+# scheduled check.
+#
+# This repo is public, so this workflow's logs and inputs are world-readable:
+# the CLI prints only counts and redacted line shapes here, and sends any
+# name / passport fragment / chat ID to the operator's own Telegram chat.
+# Identify a person by their watchlist id, never by typing their name in.
+name: Diagnose
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "What to check"
+        required: true
+        default: pending
+        type: choice
+        options:
+          - pending
+          - verify-chats
+          - inspect
+      post:
+        description: "inspect only: Telegram message id of the post (blank = most recent)"
+        required: false
+        type: string
+      recent:
+        description: "inspect only: how many recent posts to inspect if no id given"
+        required: false
+        default: "1"
+        type: string
+      watchlist_id:
+        description: "inspect only: watchlist entry id to search for (id, not name)"
+        required: false
+        type: string
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies (poppler, tesseract)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils tesseract-ocr
+
+      - name: Install Python dependencies
+        run: pip install -r checker/requirements.txt
+
+      - name: Run diagnostics
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+        run: |
+          args=""
+          if [ "${{ inputs.command }}" = "inspect" ]; then
+            if [ -n "${{ inputs.post }}" ]; then
+              args="$args --post ${{ inputs.post }}"
+            else
+              args="$args --recent ${{ inputs.recent }}"
+            fi
+            if [ -n "${{ inputs.watchlist_id }}" ]; then
+              args="$args --watchlist-id ${{ inputs.watchlist_id }}"
+            fi
+          fi
+          python -m checker.diagnose ${{ inputs.command }} $args

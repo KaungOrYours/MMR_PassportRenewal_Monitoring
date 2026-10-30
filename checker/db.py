@@ -168,6 +168,7 @@ _ADDITIVE_COLUMNS = [
     ("watchlist", "telegram_chat_id", "VARCHAR"),
     ("watchlist", "lookup_token", "VARCHAR"),
     ("watchlist", "terms_accepted_at", "TIMESTAMPTZ"),
+    ("matches", "notified_at", "TIMESTAMPTZ"),
 ]
 
 

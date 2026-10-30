@@ -102,3 +102,76 @@ def test_renewal_name_only_match_is_not_reported():
     row = next(r for r in result.rows if r.name == "NYAN LIN HTET")
     entry = WatchlistEntry(id=1, full_name="Nyan Lin Htet", passport_no="ZZ999999")
     assert match_renewal_row(entry, row) is None
+
+
+# The @mesg15 lists are photos of a *bordered* table, and the border is what
+# breaks OCR in ways the clean-text sample above never shows. Every case below
+# was observed in a real post that the checker silently mis-parsed.
+
+BORDERED_PAGE = """PV to PJ passport validity extension list
+6-11-2026 date - appointment notice
+
+91 |MI KAY THI AUNG        MG 18**23   PV   PJ
+92 |SU MON                 MG 22**99   Pv   PJ
+93 |{LU SENG               MF 82**57   PV   PJ
+94 |MOE NYUNT 00           MG 08**54   PV   PJ
+95 |ZWE HTET NAING         MHO01**98   PV   PJ
+96 |NAY WUNN LETT          MG 07°*56   PV   PT
+"""
+
+
+def test_bordered_table_rows_all_parse():
+    result = parse_renewal_page(1, BORDERED_PAGE)
+    assert result.row_count == 6
+    assert result.index_numbers == [91, 92, 93, 94, 95, 96]
+    assert result.missing_indexes == []
+    assert not result.has_gap
+
+
+def test_mangled_mask_and_spliced_letter_still_canonicalize():
+    """OCR renders "*" as "°" and splices an "O" into the digits; demanding a
+    literal "AA 99**99" dropped both rows outright."""
+    rows = {r.name: r.masked_passport for r in parse_renewal_page(1, BORDERED_PAGE).rows}
+    assert rows["ZWE HTET NAING"] == "MH01**98"   # from "MHO01**98"
+    assert rows["NAY WUNN LETT"] == "MG07**56"    # from "MG 07°*56"
+
+
+def test_table_border_is_stripped_from_the_name():
+    rows = [r.name for r in parse_renewal_page(1, BORDERED_PAGE).rows]
+    assert "LU SENG" in rows                      # not "{LU SENG"
+
+
+def test_lowercase_type_code_is_still_read():
+    """"PV" comes back as "Pv" often enough that a case-sensitive match left
+    the alert saying "PJ -> ?" instead of "PV -> PJ"."""
+    row = next(r for r in parse_renewal_page(1, BORDERED_PAGE).rows if r.name == "SU MON")
+    assert (row.current_type, row.new_type) == ("PV", "PJ")
+
+
+def test_a_hole_in_the_row_numbers_is_detected():
+    """The row-count-vs-index-marker check is blind on a bordered table
+    (INDEX_RE counts ~0 because the number is glued to the border), so a lost
+    row has to be caught by the gap in the list's own numbering."""
+    page = BORDERED_PAGE.replace("94 |MOE NYUNT 00           MG 08**54   PV   PJ\n", "")
+    result = parse_renewal_page(1, page)
+    assert result.row_count == 5
+    assert result.missing_indexes == [94]
+    assert result.has_gap
+
+
+def test_ocr_digits_in_a_name_do_not_break_the_match():
+    from checker.match import names_plausibly_match
+    assert names_plausibly_match("MOE NYUNT OO", "MOE NYUNT 00")[0]
+    assert names_plausibly_match("THANT ZIN AUNG", "/THANT ZIN AUNG")[0]
+    assert names_plausibly_match("NAW THART WAH HTOO", "{NAW THART WAH HTOO")[0]
+
+
+def test_loosened_name_normalization_still_rejects_a_different_person():
+    """Regression guard: the fixes above must not reopen the false-positive
+    token_set_ratio was dropped for -- an extra name word is a different
+    person, not an OCR variant."""
+    from checker.match import names_plausibly_match
+    assert not names_plausibly_match("KAUNG HTET", "KAUNG HTET KYAW")[0]
+    assert not names_plausibly_match("KAUNG HTET KYAW", "{KAUNG HTET")[0]
+    assert not names_plausibly_match("MIN TUN", "MIN TUN AUNG")[0]
+    assert not names_plausibly_match("THANT ZIN AUNG", "THANT ZIN PHYO")[0]
