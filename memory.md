@@ -439,6 +439,11 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
 - Signup now requires, server-side-enforced: non-empty, numeric-format
   `telegram_chat_id` and `terms_accepted: true` (see
   `backend/main.py::create_watchlist`).
+- Alert delivery is a separate retrying stage (`deliver_pending_alerts`)
+  and the renewal parser is hardened against bordered-table OCR damage —
+  both live on `main` as of **31 Oct 2026** (commit `416d150`). The
+  reporting user confirmed the same day that they could find their own
+  name in the tool's list and that the bot was messaging them again.
 
 ## Open/pending items not yet confirmed resolved
 
@@ -450,11 +455,27 @@ Vercel frontend <--Bearer token (admin only)--> Render FastAPI <--> Neon Postgre
 - No automated test suite exists for `backend/` (only `checker/tests/`
   currently exists, 37 passing tests). Backend changes are currently
   verified by ad hoc scripts rather than a committed suite.
-- At least one active watchlist entry has a Telegram ID the bot cannot
-  reach ("chat not found" on the Oct 30 run). Its alert is now kept
-  pending and retried rather than lost, but it will keep failing until
-  the ID is corrected in `/admin`; `diagnose verify-chats` identifies
-  which entry.
+- At least one active watchlist entry had a Telegram ID the bot could not
+  reach ("chat not found" on the Oct 30 run) — **which entry was never
+  established.** Its alert is now kept pending and retried rather than
+  lost, but it will keep failing on every run until the ID is corrected
+  in `/admin`. Run `diagnose verify-chats` to identify it; do not assume
+  it was the reporting user's own entry, since theirs was working again
+  by 31 Oct.
+- **The parser fixes do not retroactively repair already-stored posts.**
+  Every row the old bordered-table OCR handling dropped — roughly 1 in 5
+  people per list, between rows lost outright and names that failed the
+  match gate — is still absent from (or unmatchable in) `entries` for
+  every post processed before 31 Oct 2026. A re-parse would need the
+  same snapshot-rewrite path the post_id 177 item below is blocked on.
+  Until then, "not in the list" for an older post is not evidence of
+  absence.
+- Worth confirming on the first scheduled run after 31 Oct 2026 that
+  `deliver_pending_alerts` actually drained the backlog: the run log
+  should show `[notify] N match(es) awaiting delivery` followed by
+  `[notify] Delivered ...` lines, or a Telegram failure report naming
+  whoever could not be reached. `diagnose pending` answers the same
+  question on demand.
 - **Page 1 of the Oct 19 `@mesg15` renewal post (post_id 177) is still
   missing from the database** — the integrity-check fix above prevents this
   going forward, but doesn't retroactively recover already-processed posts.
