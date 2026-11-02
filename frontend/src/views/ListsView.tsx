@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type Entry, type EntrySearchResult, type Snapshot } from '../api'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const SOURCE_LABELS: Record<string, string> = {
   embassy_pdf: 'Lost & Seaman/Offshore (website)',
@@ -7,6 +8,7 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 export default function ListsView() {
+  const { language } = useLanguage()
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [selected, setSelected] = useState<number | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
@@ -59,7 +61,7 @@ export default function ListsView() {
         </select>
         <input
           className="flex-1 min-w-40 rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
-          placeholder="Search name or passport no. across the entire history"
+          placeholder={language === 'my' ? 'အမည်ဖြင့် စာရင်းအားလုံးတွင် ရှာပါ' : 'Search by name across the entire history'}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />

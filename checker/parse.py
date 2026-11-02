@@ -20,6 +20,8 @@ BURMESE_DIGITS = str.maketrans("၀၁၂၃၄၅၆၇၈၉", "0123456789")
 STRICT_PASSPORT_RE = re.compile(r"\b([A-Za-z])\s?([A-Za-z])\s?(\d{6})\b")  # standard MF123456 form -> 'passport' kind
 LOOSE_ID_RE = re.compile(r"\b([A-Za-z]{1,4})[\s-]?(\d{4,7})\b")  # seaman-book / CDC / mistyped-length codes -> 'other' kind
 DATE_RE = re.compile(r"\b(\d{1,2}\s?[/-]\s?\d{1,2}\s?[/-]\s?\d{4})\b")
+# A seaman-book number's own issue date ("SIRB-10245/24-12-2014"), which isn't the approval date.
+ATTACHED_DATE_RE = re.compile(r"^\s*/\s*\d{1,2}\s?[/-]\s?\d{1,2}\s?[/-]\s?\d{4}\b")
 # Index markers: "1.", "12,", "1။" (post Burmese-digit-normalization), OCR table pipes "1. |"
 INDEX_RE = re.compile(r"^\s*(\d{1,3})\s*[.|,၊။]", re.MULTILINE)
 LEADING_INDEX_RE = re.compile(r"^\s*\d{1,3}\s*[.|,၊။]?\s*\|?\s*")
@@ -92,7 +94,7 @@ def _extract_row(page_no: int, line: str, fallback_name: str) -> Row | None:
 
     identifier = canonical_passport(m.group(0))
     before = line[: m.start()]
-    after = line[m.end():]
+    after = ATTACHED_DATE_RE.sub("", line[m.end():])
 
     name = normalize_name(LEADING_INDEX_RE.sub("", before))
     if not name:

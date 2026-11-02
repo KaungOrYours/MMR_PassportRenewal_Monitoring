@@ -21,6 +21,7 @@ from . import db
 from .crash_report import database_metadata, describe_exception, install_excepthook
 from .extract import extract_pdf, ocr_image_bytes, reocr_page
 from .fetch import fetch
+from .masking import mask_identifier, scrub_identifiers
 from .match import WatchlistEntry, find_matches, find_renewal_matches
 from .notify import (
     format_delivery_failures, format_heartbeat, format_integrity_warning,
@@ -82,7 +83,7 @@ def _report_stage_failure(stage: str, exc: Exception) -> None:
     _try_send(f"⚠️ {html.escape(stage)}: {html.escape(summary)}", label="crash notice")
 
 
-def _record_matches(session, matches, entry_rows, snapshot, source, passport_of) -> int:
+def _record_matches(session, matches, entry_rows, snapshot, source, passport_of, legacy_passport_of=None) -> int:
     """Writes a MatchRecord for every new match, leaving notified_at NULL.
 
     Delivery is deliberately NOT done here (see deliver_pending_alerts): the
@@ -90,14 +91,19 @@ def _record_matches(session, matches, entry_rows, snapshot, source, passport_of)
     person next time, so sending from inside this loop meant a failed send
     left a committed "match" that was never delivered and never retried.
 
+    legacy_passport_of gives the key an older record may still hold. Records
+    stored before masking keep their full number until
+    mask_stored_passports runs, and missing one would alert that person twice.
+
     Returns the number of matches awaiting delivery, for the heartbeat.
     """
     pending = 0
     for m in matches:
         passport = passport_of(m.row)
-        existing = session.query(db.MatchRecord).filter_by(
-            watchlist_id=m.watchlist_id,
-            passport_canonical=passport,
+        keys = [passport, legacy_passport_of(m.row)] if legacy_passport_of else [passport]
+        existing = session.query(db.MatchRecord).filter(
+            db.MatchRecord.watchlist_id == m.watchlist_id,
+            db.MatchRecord.passport_canonical.in_(keys),
         ).first()
         if existing is not None:
             # recorded before; only counts as outstanding if the alert for it
@@ -272,9 +278,10 @@ def run_embassy_pdf_check(session) -> None:
         entry_rows = []
         for row in all_rows:
             entry = db.Entry(
-                snapshot_id=snapshot.id, page_no=row.page_no, name=row.name,
-                passport_no=row.passport_no, id_kind=row.id_kind,
-                approved_date=row.approved_date, remark=row.remark,
+                # masked: matching below uses the full number from `row`, in memory
+                snapshot_id=snapshot.id, page_no=row.page_no, name=scrub_identifiers(row.name),
+                passport_no=mask_identifier(row.passport_no), id_kind=row.id_kind,
+                approved_date=row.approved_date, remark=scrub_identifiers(row.remark),
             )
             session.add(entry)
             entry_rows.append((entry, row))
@@ -290,7 +297,8 @@ def run_embassy_pdf_check(session) -> None:
         log.info("[embassy_pdf] Found %d match(es) against %d watchlist entries", len(matches), len(watchlist))
 
         pending_count = _record_matches(
-            session, matches, entry_rows, snapshot, "embassy_pdf", lambda row: row.passport_no,
+            session, matches, entry_rows, snapshot, "embassy_pdf", lambda row: mask_identifier(row.passport_no),
+            legacy_passport_of=lambda row: row.passport_no,
         )
         session.commit()
 
