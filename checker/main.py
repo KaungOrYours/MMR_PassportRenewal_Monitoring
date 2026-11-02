@@ -9,6 +9,7 @@ other, and each exits quietly (no DB writes, no notifications) when there is
 nothing new since the last run.
 """
 import hashlib
+import html
 import logging
 import sys
 import tempfile
@@ -17,19 +18,23 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import db
+from .crash_report import database_metadata, describe_exception, install_excepthook
 from .extract import extract_pdf, ocr_image_bytes, reocr_page
 from .fetch import fetch
 from .match import WatchlistEntry, find_matches, find_renewal_matches
 from .notify import (
     format_delivery_failures, format_heartbeat, format_integrity_warning,
     format_match_alert, format_renewal_alert, format_renewal_heartbeat,
-    send_document, send_message,
+    safe_error_text, send_document, send_message,
 )
 from .parse import parse_page
 from .parse_renewal import parse_renewal_page
 from . import telegram_source
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Telethon logs raw and decrypted bytes at INFO and WARNING (e.g. network/
+# mtprotosender.py, client/updates.py), and this log is public.
+logging.getLogger("telethon").setLevel(logging.CRITICAL)
 log = logging.getLogger("checker")
 
 
@@ -53,15 +58,28 @@ def _try_send(text: str, label: str) -> None:
     must never abort a run: they report on the job, they are not the job."""
     try:
         send_message(text)
-    except Exception:
-        log.exception("[notify] Could not send %s", label)
+    except Exception as exc:
+        # no traceback: a requests exception's message contains the bot token
+        log.error("[notify] Could not send %s: %s", label, safe_error_text(exc))
 
 
 def _try_send_document(file_path: str, caption: str = "") -> None:
     try:
         send_document(file_path, caption=caption)
-    except Exception:
-        log.exception("[notify] Could not send document %s", file_path)
+    except Exception as exc:
+        log.error("[notify] Could not send document %s: %s", file_path, safe_error_text(exc))
+
+
+def _report_stage_failure(stage: str, exc: Exception) -> None:
+    """Logs a crashed stage and tells the operator, in types and locations only
+    (see crash_report.py for why no exception message or traceback is printed).
+    The notice goes through _try_send, so a failure to send it can't change how
+    the run ends."""
+    summary = describe_exception(exc)
+    metadata = database_metadata(exc)
+    log.error("%s: %s%s; detail withheld from this public log",
+              stage, summary, f" ({metadata})" if metadata else "")
+    _try_send(f"⚠️ {html.escape(stage)}: {html.escape(summary)}", label="crash notice")
 
 
 def _record_matches(session, matches, entry_rows, snapshot, source, passport_of) -> int:
@@ -170,22 +188,23 @@ def deliver_pending_alerts(session) -> list[str]:
         # Telegram field) falls back to the operator's chat to relay by hand
         # -- see Watchlist.telegram_chat_id. Public signup always sets one.
         if not watch.telegram_chat_id:
-            log.warning("[notify] %s has no telegram_chat_id; sending to the operator chat to relay",
-                        watch.full_name)
+            log.warning("[notify] Watchlist id %d has no telegram_chat_id; sending to the operator chat to relay",
+                        watch.id)
 
         try:
             send_message(text, chat_id=watch.telegram_chat_id or None)
         except Exception as exc:
-            failures.append(f"{watch.full_name}: {exc}")
-            log.error("[notify] Alert to %s failed, keeping it pending for the next run: %s",
-                      watch.full_name, exc)
+            reason = safe_error_text(exc)
+            failures.append(f"{watch.full_name}: {reason}")  # operator's private chat only
+            log.error("[notify] Alert to watchlist id %d failed, keeping it pending for the next run: %s",
+                      watch.id, reason)
             continue
 
         now = datetime.now(timezone.utc)
         for record, _entry in items:
             record.notified_at = now
         session.commit()
-        log.info("[notify] Delivered %d %s match(es) to %s", len(views), source, watch.full_name)
+        log.info("[notify] Delivered %d %s match(es) to watchlist id %d", len(views), source, watch.id)
 
     return failures
 
@@ -430,17 +449,17 @@ def run() -> int:
 
     try:
         run_embassy_pdf_check(session)
-    except Exception:
-        log.exception("[embassy_pdf] Check failed")
-        session.rollback()
+    except Exception as exc:
         exit_code = 1
+        _report_stage_failure("[embassy_pdf] Check failed", exc)
+        session.rollback()
 
     try:
         run_telegram_renewal_check(session)
-    except Exception:
-        log.exception("[telegram_renewal] Check failed")
-        session.rollback()
+    except Exception as exc:
         exit_code = 1
+        _report_stage_failure("[telegram_renewal] Check failed", exc)
+        session.rollback()
 
     # Deliberately outside both checks, and run even when neither published
     # anything new, so an alert that failed to send on an earlier run still
@@ -450,13 +469,14 @@ def run() -> int:
         if failures:
             exit_code = 1
             _try_send(format_delivery_failures(failures), label="delivery failure report")
-    except Exception:
-        log.exception("[notify] Pending-alert delivery failed")
-        session.rollback()
+    except Exception as exc:
         exit_code = 1
+        _report_stage_failure("[notify] Pending-alert delivery failed", exc)
+        session.rollback()
 
     return exit_code
 
 
 if __name__ == "__main__":
+    install_excepthook()
     sys.exit(run())

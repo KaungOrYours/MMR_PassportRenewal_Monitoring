@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from checker import db as models
-from checker.notify import send_message
+from checker.notify import safe_error_text, send_message
 
 from .auth import get_db, webhook_secret
 
@@ -83,7 +83,7 @@ async def telegram_webhook(
                 "Once registered, you can send /delete anytime to remove your information from our system."
             )
         send_message(text, chat_id=chat_id)
-    except Exception:
-        log.exception("Failed to reply to Telegram webhook message")
+    except Exception as e:
+        log.error("Failed to reply to Telegram webhook message: %s", safe_error_text(e))
 
     return {"ok": True}

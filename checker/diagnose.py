@@ -29,28 +29,33 @@ Usage:
     python -m checker.diagnose pending
 """
 import argparse
+import html
 import logging
 import re
 import sys
 
 from . import db, telegram_source
+from .crash_report import install_excepthook
 from .extract import ocr_image_bytes
 from .match import WatchlistEntry, match_renewal_row, names_plausibly_match
-from .notify import get_chat, send_message
+from .notify import get_chat, safe_error_text, send_message
 from .parse_renewal import MASKED_PASSPORT_RE, normalize_text, parse_renewal_page
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Telethon logs raw and decrypted bytes at INFO and WARNING, and this log is public.
+logging.getLogger("telethon").setLevel(logging.CRITICAL)
 log = logging.getLogger("diagnose")
 
 MAX_TELEGRAM_CHARS = 3500
 
 
 def _shape(line: str) -> str:
-    """Structure of a line with its content removed: letters -> A, digits -> 9.
+    """Structure of a line with its content removed: letters -> A, digits -> 9,
+    and any other non-ASCII character -> A, so non-Latin text can't pass through.
 
     Safe to print publicly, and enough to tell a table row ("99 AAAA AAAA
     AA 99**99 AA AA") from a notice/cover image at a glance."""
-    return re.sub(r"[A-Za-z]", "A", re.sub(r"\d", "9", line))
+    return re.sub(r"[A-Za-z]|[^\x00-\x7F]", "A", re.sub(r"\d", "9", line))
 
 
 def _report_to_operator(title: str, lines: list[str]) -> None:
@@ -60,11 +65,14 @@ def _report_to_operator(title: str, lines: list[str]) -> None:
     body = "\n".join(lines)
     if len(body) > MAX_TELEGRAM_CHARS:
         body = body[:MAX_TELEGRAM_CHARS] + "\n[...truncated]"
+    # Escaped after truncating, so a cut can't split an entity. An unescaped "<"
+    # in a name or OCR line makes Telegram reject the whole report.
+    body = html.escape(body)
     try:
         send_message(f"🔎 <b>{title}</b>\n\n<pre>{body}</pre>")
         print(f"   (detail sent to the operator Telegram chat: {len(lines)} line(s))")
     except Exception as exc:
-        log.error("Could not send the detail report to Telegram: %s", exc)
+        log.error("Could not send the detail report to Telegram: %s", safe_error_text(exc))
 
 
 def _classify(text: str, rows: int, markers: int, passport_lines: int) -> str:
@@ -175,7 +183,7 @@ def cmd_verify_chats(args) -> int:
             get_chat(row.telegram_chat_id)
             reachable += 1
         except Exception as exc:
-            unreachable.append(f"id {row.id}  {row.full_name}  chat_id={row.telegram_chat_id}  -> {exc}")
+            unreachable.append(f"id {row.id}  {row.full_name}  chat_id={row.telegram_chat_id}  -> {safe_error_text(exc)}")
 
     print(f"{len(rows)} active entries: {reachable} reachable, {len(unreachable)} UNREACHABLE, "
           f"{no_id} with no Telegram ID (these fall back to the operator chat)")
@@ -230,4 +238,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    install_excepthook()
     sys.exit(main())

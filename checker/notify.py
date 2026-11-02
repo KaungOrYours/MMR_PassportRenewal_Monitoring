@@ -7,20 +7,53 @@ import requests
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 TIMEOUT = 20
 
+_MAX_ERROR_CHARS = 200
+
+
+class TelegramAPIError(RuntimeError):
+    """Telegram answered and refused the request. Its message holds Telegram's
+    own description, never the request URL (which contains the bot token)."""
+
+
+def raise_for_telegram_error(resp: requests.Response) -> None:
+    if resp.ok:
+        return
+    # surface Telegram's actual reason (e.g. "Bad Request: chat not found",
+    # "Forbidden: bot was blocked by the user") instead of requests' own
+    # "400 Client Error ... for url: ...", which hides why it really failed
+    # and prints the bot token along with the URL
+    try:
+        description = resp.json().get("description") or resp.reason
+    except ValueError:
+        description = resp.reason
+    raise TelegramAPIError(f"Telegram API error ({resp.status_code}): {description}")
+
+
+def safe_error_text(exc: BaseException) -> str:
+    """What may be logged about a failed Telegram call. This repo's Actions
+    logs are public.
+
+    Only a TelegramAPIError keeps its text. Anything else is reduced to its
+    type, because a requests exception's message includes the request URL and
+    so the bot token. Telegram's description is cut at its first double quote
+    too: a parse error can quote part of the rejected message ('Unsupported
+    start tag "..."'), and that message holds names and OCR text. Nothing after
+    the quote can be trusted, since the quoted text may contain quotes itself.
+    """
+    if not isinstance(exc, TelegramAPIError):
+        return type(exc).__name__
+    text = str(exc)
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if token:
+        text = text.replace(token, "[redacted]")
+    return text.split('"', 1)[0].rstrip()[:_MAX_ERROR_CHARS]
+
 
 def _call(method: str, **params) -> dict:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     url = TELEGRAM_API.format(token=token, method=method)
     resp = requests.post(url, data=params, timeout=TIMEOUT)
-    if not resp.ok:
-        # surface Telegram's actual reason (e.g. "Bad Request: chat not
-        # found", "Forbidden: bot was blocked by the user") instead of a
-        # generic "400 Client Error" that hides why it really failed
-        try:
-            description = resp.json().get("description", resp.text)
-        except ValueError:
-            description = resp.text
-        raise RuntimeError(f"Telegram API error ({resp.status_code}): {description}")
+    raise_for_telegram_error(resp)
     return resp.json()
 
 
@@ -47,7 +80,7 @@ def send_document(file_path: str, caption: str = "", chat_id: str | None = None)
             files={"document": f},
             timeout=60,
         )
-    resp.raise_for_status()
+    raise_for_telegram_error(resp)
     return resp.json()
 
 

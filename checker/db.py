@@ -154,7 +154,10 @@ class EnrollmentCode(Base):
 
 def get_engine(database_url: str | None = None):
     url = database_url or os.environ["NEON_DATABASE_URL"]
-    return create_engine(url, pool_pre_ping=True)
+    # hide_parameters: a SQLAlchemy error's message otherwise prints the bound
+    # values of the failing statement -- names and passport numbers -- and the
+    # checker's logs are public (GitHub Actions on a public repo).
+    return create_engine(url, pool_pre_ping=True, hide_parameters=True)
 
 
 # columns added after the initial deploy -- create_all() only creates

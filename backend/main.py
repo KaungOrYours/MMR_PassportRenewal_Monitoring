@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from checker import db as models
 from checker.match import names_plausibly_match
-from checker.notify import send_message
+from checker.notify import raise_for_telegram_error, safe_error_text, send_message
 
 from .auth import get_db, require_session, webhook_secret
 from .ratelimit import rate_limit
@@ -58,10 +58,11 @@ def _register_telegram_webhook() -> None:
             json={"url": f"{public_url.rstrip('/')}/api/telegram/webhook", "secret_token": secret},
             timeout=15,
         )
-        resp.raise_for_status()
+        raise_for_telegram_error(resp)
         log.info("Telegram webhook registration: %s", resp.json())
-    except Exception:
-        log.exception("Failed to register Telegram webhook")
+    except Exception as e:
+        # no traceback or str(e): a requests error's message holds the bot token
+        log.error("Failed to register Telegram webhook: %s", safe_error_text(e))
 
 
 @app.get("/api/health")
@@ -92,8 +93,11 @@ def _try_send(text: str, chat_id: str) -> tuple[bool, str | None]:
         send_message(text, chat_id=chat_id)
         return True, None
     except Exception as e:
-        log.exception("Failed to send Telegram message")
-        return False, str(e)
+        # The return value reaches the public signup response. A requests
+        # error's message holds the bot token, so never return or log str(e).
+        reason = safe_error_text(e)
+        log.error("Failed to send Telegram message: %s", reason)
+        return False, reason
 
 
 @app.get("/api/watchlist", response_model=list[WatchlistOut], dependencies=[Depends(require_session)])

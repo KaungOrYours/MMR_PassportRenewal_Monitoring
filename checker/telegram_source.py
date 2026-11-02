@@ -33,7 +33,11 @@ def _client() -> TelegramClient:
     api_id = int(os.environ["TELEGRAM_API_ID"])
     api_hash = os.environ["TELEGRAM_API_HASH"]
     session = os.environ["TELEGRAM_SESSION_STRING"]
-    return TelegramClient(StringSession(session), api_id, api_hash)
+    # This client only reads channel history, so ask Telegram not to push updates
+    # at it. Telethon still starts its update loop, so this reduces what it decodes
+    # rather than ending it. The silenced "telethon" logger in main.py and
+    # diagnose.py is what protects the public log.
+    return TelegramClient(StringSession(session), api_id, api_hash, receive_updates=False)
 
 
 def _group_into_posts(client: TelegramClient, messages: list) -> list[RenewalPost]:
