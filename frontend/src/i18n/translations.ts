@@ -14,6 +14,9 @@ export interface TranslationShape {
     telegramIdLabel: string
     telegramRequired: string
     telegramIdPlaceholder: string
+    telegramIdLockedPlaceholder: string
+    telegramStep1: string
+    telegramStep2: string
     connectTelegram: string
     telegramHelpPrefix: string
     telegramHelpStart: string
@@ -24,6 +27,7 @@ export interface TranslationShape {
     submit: string
     submitting: string
     hintNoTelegram: string
+    hintNoTelegramId: string
     hintNoTerms: string
     hintNoName: string
     telegramInvalidFormat: string
@@ -43,6 +47,17 @@ export interface TranslationShape {
     p4: string
     p5: string
     checkbox: string
+  }
+  lists: {
+    searchPlaceholder: string
+    searchButton: string
+    searching: string
+    hint: string
+    invalid: string
+    noMatches: string
+    rateLimited: string
+    error: string
+    tooMany: string
   }
   done: {
     onList: string
@@ -71,6 +86,9 @@ export const translations: Record<Language, TranslationShape> = {
       telegramIdLabel: 'Your Telegram ID',
       telegramRequired: 'required',
       telegramIdPlaceholder: 'e.g. 123456789',
+      telegramIdLockedPlaceholder: 'Tap "Connect Telegram" first',
+      telegramStep1: 'Step 1: Open our Telegram bot',
+      telegramStep2: 'Step 2:',
       connectTelegram: 'Connect Telegram',
       telegramHelpPrefix: 'Tap "Connect Telegram", then tap',
       telegramHelpStart: 'Start',
@@ -82,7 +100,8 @@ export const translations: Record<Language, TranslationShape> = {
       note: 'Note (optional)',
       submit: 'Notify me',
       submitting: 'Adding…',
-      hintNoTelegram: 'Connect Telegram and enter your ID above to continue.',
+      hintNoTelegram: 'Tap "Connect Telegram" above first, then tap Start in the chat that opens.',
+      hintNoTelegramId: 'Paste the ID our bot sent you above to continue.',
       hintNoTerms: 'Please accept the Terms & Conditions to continue.',
       hintNoName: 'Enter your full name to continue.',
       telegramInvalidFormat:
@@ -106,6 +125,18 @@ export const translations: Record<Language, TranslationShape> = {
       checkbox:
         "I have read and agree to the Terms & Conditions above, and I confirm this information is my own (or submitted with the owner's consent).",
     },
+    lists: {
+      searchPlaceholder: 'Your name, or your full passport number',
+      searchButton: 'Search',
+      searching: 'Searching…',
+      hint: 'Type your name (at least 4 letters) or your full passport number. Passport numbers are always shown partly hidden, even if you type the whole number. You can search 10 times per hour.',
+      invalid: 'Please type your name (at least 4 letters, and no long numbers) or your full passport number.',
+      noMatches:
+        "No match found. This does not prove you are not on a list: names and numbers are read from scanned documents and can be misread, so please also check with the Embassy.",
+      rateLimited: "You've reached the search limit (10 searches per hour). Please try again later.",
+      error: 'Something went wrong. Please try again.',
+      tooMany: 'Too many matches. Please type more of your name.',
+    },
     done: {
       onList: "You're on the list.",
       explain:
@@ -113,7 +144,7 @@ export const translations: Record<Language, TranslationShape> = {
       sentOk: '✅ A confirmation message was sent to your Telegram — check your chat with the bot.',
       sentFailPrefix: "⚠️ We couldn't send you a Telegram message",
       sentFailHelp:
-        'Make sure you\'ve messaged @MMR_PassportRenewalMonitoringBot on Telegram first (send it /start), and that your Telegram ID is correct — get it from @userinfobot. You\'re still on the list either way; you can check your status with the link below.',
+        'Make sure you\'ve messaged @MMR_PassportRenewalMonitoringBot on Telegram first (send it /start), and that your Telegram ID is the number that bot sent you. You\'re still on the list either way; you can check your status with the link below.',
       bookmarkNote: 'Bookmark this link to check your status anytime:',
       addAnother: 'Add another person',
     },
@@ -138,6 +169,9 @@ export const translations: Record<Language, TranslationShape> = {
       telegramIdLabel: 'သင့် Telegram ID',
       telegramRequired: 'လိုအပ်ပါသည်',
       telegramIdPlaceholder: 'ဥပမာ- 123456789',
+      telegramIdLockedPlaceholder: '"Telegram ချိတ်ဆက်ရန်" ကို ဦးစွာ နှိပ်ပါ',
+      telegramStep1: 'အဆင့် ၁: ကျွန်ုပ်တို့၏ Telegram ဘော့တ်ကို ဖွင့်ပါ',
+      telegramStep2: 'အဆင့် ၂:',
       connectTelegram: 'Telegram ချိတ်ဆက်ရန်',
       telegramHelpPrefix: '"Connect Telegram" ကို နှိပ်ပြီး ပွင့်လာသည့် စကားပြောခန်း (Chat) တွင်',
       telegramHelpStart: 'Start',
@@ -149,7 +183,8 @@ export const translations: Record<Language, TranslationShape> = {
       note: 'မှတ်ချက် (ဖြည့်ရန် မလိုပါ)',
       submit: 'အသိပေးပါ',
       submitting: 'ထည့်သွင်းနေသည်…',
-      hintNoTelegram: 'ဆက်လက် ဆောင်ရွက်ရန် Telegram ကို ချိတ်ဆက်ပြီး သင့် ID ကို အထက်တွင် ထည့်သွင်းပါ။',
+      hintNoTelegram: 'ဆက်လက် ဆောင်ရွက်ရန် အထက်ရှိ "Telegram ချိတ်ဆက်ရန်" ကို ဦးစွာ နှိပ်ပြီး ပွင့်လာသည့် စကားပြောခန်းတွင် Start ကို နှိပ်ပါ။',
+      hintNoTelegramId: 'ဆက်လက် ဆောင်ရွက်ရန် ဘော့တ်မှ ပို့ပေးသည့် ID ကို အထက်တွင် ထည့်သွင်းပါ။',
       hintNoTerms: 'ဆက်လက် ဆောင်ရွက်ရန် စည်းမျဉ်းစည်းကမ်းများကို သဘောတူပေးပါ။',
       hintNoName: 'ဆက်လက် ဆောင်ရွက်ရန် သင့်အမည်အပြည့်အစုံကို ထည့်သွင်းပေးပါ။',
       telegramInvalidFormat:
@@ -172,6 +207,18 @@ export const translations: Record<Language, TranslationShape> = {
       checkbox:
         'အထက်ပါ စည်းမျဉ်းနှင့် စည်းကမ်းချက်များကို ဖတ်ရှုပြီး သဘောတူပါသည်၊ အချက်အလက်များသည် ကျွန်ုပ်၏ ကိုယ်ပိုင် ဖြစ်ကြောင်း (သို့မဟုတ် ပိုင်ရှင်၏ ခွင့်ပြုချက် ရယူထားကြောင်း) အတည်ပြုပါသည်။',
     },
+    lists: {
+      searchPlaceholder: 'သင့်အမည် သို့မဟုတ် ပတ်စ်ပို့နံပါတ် အပြည့်အစုံ',
+      searchButton: 'ရှာရန်',
+      searching: 'ရှာဖွေနေသည်…',
+      hint: 'သင့်အမည် (အနည်းဆုံး အက္ခရာ ၄ လုံး) သို့မဟုတ် ပတ်စ်ပို့နံပါတ် အပြည့်အစုံကို ရိုက်ထည့်ပါ။ နံပါတ်အပြည့်အစုံ ရိုက်ထည့်ထားသော်လည်း ပတ်စ်ပို့နံပါတ်များကို တစ်စိတ်တစ်ပိုင်း ဖုံးကွယ်ပြီးသာ ပြသပါမည်။ တစ်နာရီလျှင် ၁၀ ကြိမ် ရှာနိုင်ပါသည်။',
+      invalid: 'သင့်အမည် (အနည်းဆုံး အက္ခရာ ၄ လုံး၊ ဂဏန်းရှည်များ မပါရ) သို့မဟုတ် ပတ်စ်ပို့နံပါတ် အပြည့်အစုံကို ရိုက်ထည့်ပါ။',
+      noMatches:
+        'ကိုက်ညီသည့် ရလဒ် မတွေ့ပါ။ သို့သော် သင်သည် စာရင်းတွင် မပါဟု မဆိုလိုပါ- အမည်နှင့် နံပါတ်များကို စကင်ဖတ်ထားသော စာရွက်စာတမ်းမှ ဖတ်ယူခြင်း ဖြစ်၍ မှားယွင်းနိုင်သဖြင့် သံရုံးတွင်လည်း အတည်ပြုစစ်ဆေးပါ။',
+      rateLimited: 'ရှာဖွေမှု ကန့်သတ်ချက် (တစ်နာရီလျှင် ၁၀ ကြိမ်) ပြည့်သွားပါပြီ။ ခေတ္တစောင့်ပြီးမှ ထပ်မံကြိုးစားပါ။',
+      error: 'တစ်စုံတစ်ရာ မှားယွင်းသွားပါသည်။ ထပ်မံကြိုးစားပါ။',
+      tooMany: 'ကိုက်ညီသည့် ရလဒ် များလွန်းနေပါသည်။ သင့်အမည်ကို ပိုမိုပြည့်စုံစွာ ရိုက်ထည့်ပါ။',
+    },
     done: {
       onList: 'သင့်အား စာရင်းသွင်းပြီးပါပြီ။',
       explain:
@@ -179,7 +226,7 @@ export const translations: Record<Language, TranslationShape> = {
       sentOk: '✅ သင့် Telegram သို့ အတည်ပြုမက်ဆေ့ချ် ပို့ပြီးပါပြီ — ဘော့တ်နှင့် သင့်စကားပြောခန်းကို စစ်ဆေးကြည့်ပါ။',
       sentFailPrefix: '⚠️ သင့်ထံ Telegram မက်ဆေ့ချ် ပို့နိုင်ခြင်း မရှိပါ',
       sentFailHelp:
-        '@MMR_PassportRenewalMonitoringBot ကို Telegram တွင် ဦးစွာ /start ပို့ထားပြီးကြောင်း သေချာပါစေ၊ ထို့ပြင် သင့် Telegram ID မှန်ကန်ကြောင်းလည်း စစ်ဆေးပါ — ID ကို @userinfobot မှ ရယူနိုင်ပါသည်။ မည်သို့ပင်ဖြစ်စေ သင့်အား စာရင်းတွင် ထည့်သွင်းပြီးပါပြီ၊ အောက်ပါလင့်ခ်ဖြင့် သင့်အခြေအနေကို စစ်ဆေးနိုင်ပါသည်။',
+        '@MMR_PassportRenewalMonitoringBot ကို Telegram တွင် ဦးစွာ /start ပို့ထားပြီးကြောင်း သေချာပါစေ၊ ထို့ပြင် သင့် Telegram ID သည် ထိုဘော့တ်မှ ပို့ပေးသည့် နံပါတ် ဖြစ်ကြောင်းလည်း စစ်ဆေးပါ။ မည်သို့ပင်ဖြစ်စေ သင့်အား စာရင်းတွင် ထည့်သွင်းပြီးပါပြီ၊ အောက်ပါလင့်ခ်ဖြင့် သင့်အခြေအနေကို စစ်ဆေးနိုင်ပါသည်။',
       bookmarkNote: 'ဤလင့်ခ်ကို မှတ်သားထားပြီး အချိန်မရွေး သင့်အခြေအနေကို စစ်ဆေးနိုင်ပါသည်-',
       addAnother: 'နောက်တစ်ဦး ထပ်ထည့်ရန်',
     },

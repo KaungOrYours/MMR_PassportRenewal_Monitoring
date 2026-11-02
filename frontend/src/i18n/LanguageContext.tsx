@@ -4,8 +4,11 @@ import { translations, type Language, type TranslationShape } from './translatio
 const STORAGE_KEY = 'language'
 
 function loadInitialLanguage(): Language {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  return stored === 'my' ? 'my' : 'en'
+  try {
+    return localStorage.getItem(STORAGE_KEY) === 'my' ? 'my' : 'en'
+  } catch {
+    return 'en' // storage blocked: the whole app renders inside this provider
+  }
 }
 
 type LanguageContextValue = {
@@ -20,7 +23,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(loadInitialLanguage)
 
   const setLanguage = (lang: Language) => {
-    localStorage.setItem(STORAGE_KEY, lang)
+    try {
+      localStorage.setItem(STORAGE_KEY, lang)
+    } catch {
+      // storage blocked: the choice still applies until the page reloads
+    }
     setLanguageState(lang)
   }
 

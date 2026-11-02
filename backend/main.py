@@ -1,7 +1,9 @@
 import html
 import logging
 import os
+import re
 import secrets
+import unicodedata
 from datetime import datetime, timezone
 
 import requests
@@ -11,13 +13,14 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from checker import db as models
+from checker.masking import mask_identifier, scrub_identifiers
 from checker.match import names_plausibly_match
 from checker.notify import raise_for_telegram_error, safe_error_text, send_message
 
 from .auth import get_db, require_session, webhook_secret
 from .ratelimit import rate_limit
 from .schemas import (
-    TELEGRAM_CHAT_ID_FORMAT_ERROR, EntryOut, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut,
+    TELEGRAM_CHAT_ID_FORMAT_ERROR, EntryOut, EntrySearchResponse, EntrySearchResult, ExtractionIssueOut, MatchOut, PublicMatchOut,
     PublicStats, PublicStatusOut, SnapshotOut, WatchlistIn, WatchlistOut, WatchlistUpdate, is_valid_telegram_chat_id,
     mask_name, mask_passport, mask_telegram_id,
 )
@@ -323,35 +326,99 @@ def list_extraction_issues(session: Session = Depends(get_db)):
     return session.query(models.ExtractionIssue).order_by(models.ExtractionIssue.id.desc()).all()
 
 
-@app.get("/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut])
+# Admin only. The public Lists tab must not let a visitor page through everyone's
+# rows, so the unauthenticated browse route is gone; visitors use /api/entries/search.
+@app.get(
+    "/api/snapshots/{snapshot_id}/entries", response_model=list[EntryOut], dependencies=[Depends(require_session)],
+)
 def snapshot_entries(snapshot_id: int, q: str = Query(default=""), session: Session = Depends(get_db)):
     query = session.query(models.Entry).filter_by(snapshot_id=snapshot_id)
     if q:
-        like = f"%{q.upper()}%"
-        query = query.filter(or_(models.Entry.name.ilike(like), models.Entry.passport_no.ilike(like)))
+        like = f"%{_escape_like(q.upper())}%"
+        query = query.filter(or_(
+            models.Entry.name.ilike(like, escape=LIKE_ESCAPE), models.Entry.passport_no.ilike(like, escape=LIKE_ESCAPE),
+        ))
     return query.order_by(models.Entry.page_no, models.Entry.id).all()
 
 
-@app.get("/api/entries/search", response_model=list[EntrySearchResult])
-def search_entries(q: str = Query(min_length=2), limit: int = Query(default=200, le=500), session: Session = Depends(get_db)):
-    """Searches every entry ever recorded, across all snapshots/sources."""
-    like = f"%{q.upper()}%"
+LIKE_ESCAPE = "\\"
+SEARCH_MIN_CHARS = 3          # shortest accepted query of any kind (a full passport is longer)
+SEARCH_MIN_NAME_CHARS = 4     # letters of the name pattern itself, spaces not counted
+SEARCH_MAX_NAME_DIGITS = 3
+SEARCH_MAX_RESULTS = 50
+SEARCH_LIMIT_MESSAGE = (
+    "You've reached the search limit (10 searches per hour). Please try again later."
+)
+SEARCH_BUSY_MESSAGE = "Search is very busy right now. Please try again a little later."
+# a complete passport: 1-3 letters then 6-7 digits (what checker.masking treats as one)
+_FULL_PASSPORT_RE = re.compile(r"^[A-Z]{1,3}\d{6,7}$")
+
+
+def _escape_like(text: str) -> str:
+    """Makes %, _ and the escape character match literally in a LIKE pattern."""
+    return text.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", LIKE_ESCAPE + "%").replace("_", LIKE_ESCAPE + "_")
+
+
+def _has_control_chars(text: str) -> bool:
+    # NUL makes Postgres raise (a 500); the rest have no business in a search
+    return any(unicodedata.category(c) == "Cc" for c in text)
+
+
+@app.get(
+    "/api/entries/search",
+    response_model=EntrySearchResponse,
+    dependencies=[
+        Depends(rate_limit("entry-search", limit=10, window_seconds=3600, message=SEARCH_LIMIT_MESSAGE)),
+        Depends(rate_limit("entry-search-all", limit=300, window_seconds=3600, message=SEARCH_BUSY_MESSAGE, shared=True)),
+    ],
+)
+def search_entries(q: str = Query(min_length=SEARCH_MIN_CHARS, max_length=100), session: Session = Depends(get_db)):
+    """Public search across every recorded entry. Results always carry the MASKED
+    passport, whatever form the database holds it in.
+
+    Two kinds of query only. A FULL passport number is matched as typed and as its
+    mask, so it works before and after checker/mask_stored_passports.py; fragments
+    and typed masks are not searched, so the box can't be used to guess a number a
+    piece at a time. Anything else is a name, matched as a substring, which must
+    have at least 4 letters and no long digit runs. A name that matches more than
+    SEARCH_MAX_RESULTS rows returns no rows and too_many=true rather than a
+    truncated list, so a short term can't be used to walk through the lists."""
+    if _has_control_chars(q):
+        raise HTTPException(400, "Invalid characters in the search.")
+    compact = re.sub(r"\s+", "", q).upper()
+    if len(compact) < SEARCH_MIN_CHARS:
+        raise HTTPException(400, f"Type at least {SEARCH_MIN_CHARS} characters.")
+
+    if _FULL_PASSPORT_RE.match(compact):
+        # stored full OR stored masked; the mask is shared by other people, which is
+        # the price of the stored column no longer holding the full number
+        condition = models.Entry.passport_no.in_([compact, mask_identifier(compact)])
+    else:
+        if len(compact) < SEARCH_MIN_NAME_CHARS:
+            raise HTTPException(400, f"Type at least {SEARCH_MIN_NAME_CHARS} letters of the name.")
+        if sum(c.isdigit() for c in compact) > SEARCH_MAX_NAME_DIGITS:
+            raise HTTPException(400, "A name search can't contain a long number; type the full passport number.")
+        words = " ".join(q.upper().split())
+        condition = models.Entry.name.ilike(f"%{_escape_like(words)}%", escape=LIKE_ESCAPE)
+
     rows = (
         session.query(models.Entry, models.Snapshot)
         .join(models.Snapshot, models.Entry.snapshot_id == models.Snapshot.id)
-        .filter(or_(models.Entry.name.ilike(like), models.Entry.passport_no.ilike(like)))
-        .order_by(models.Snapshot.fetched_at.desc())
-        .limit(limit)
+        .filter(condition)
+        .order_by(models.Snapshot.fetched_at.desc(), models.Entry.id)
+        .limit(SEARCH_MAX_RESULTS + 1)
         .all()
     )
-    return [
+    if len(rows) > SEARCH_MAX_RESULTS:
+        return EntrySearchResponse(results=[], too_many=True)
+    return EntrySearchResponse(results=[
         EntrySearchResult(
-            id=e.id, page_no=e.page_no, name=e.name, passport_no=e.passport_no, id_kind=e.id_kind,
-            approved_date=e.approved_date, remark=e.remark,
+            id=e.id, page_no=e.page_no, name=scrub_identifiers(e.name), passport_no=mask_identifier(e.passport_no),
+            id_kind=e.id_kind, approved_date=e.approved_date, remark=scrub_identifiers(e.remark),
             snapshot_id=s.id, source=s.source, fetched_at=s.fetched_at,
         )
         for e, s in rows
-    ]
+    ], too_many=False)
 
 
 @app.post("/api/check-now", dependencies=[Depends(require_session)])

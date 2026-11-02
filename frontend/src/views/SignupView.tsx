@@ -4,6 +4,36 @@ import { useLanguage } from '../i18n/LanguageContext'
 
 const emptyForm = { full_name: '', passport_no: '', telegram_chat_id: '', note: '' }
 
+// Telegram can't deliver to someone who never opened the bot and pressed Start,
+// so the ID field stays locked until the Connect link has been used. The flag is
+// persisted because a phone may reload this page on the way back from Telegram.
+// This is a client-side nudge only: the API can't tell whether the link was used.
+const TELEGRAM_OPENED_KEY = 'mmr_telegram_link_opened'
+
+function readTelegramOpened(): boolean {
+  try {
+    return localStorage.getItem(TELEGRAM_OPENED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeTelegramOpened(): void {
+  try {
+    localStorage.setItem(TELEGRAM_OPENED_KEY, '1')
+  } catch {
+    // storage blocked: the in-memory state still unlocks the field
+  }
+}
+
+function clearTelegramOpened(): void {
+  try {
+    localStorage.removeItem(TELEGRAM_OPENED_KEY)
+  } catch {
+    // storage blocked: nothing was persisted to clear
+  }
+}
+
 export default function SignupView() {
   const { t } = useLanguage()
   const [form, setForm] = useState(emptyForm)
@@ -14,11 +44,18 @@ export default function SignupView() {
   const [statusLink, setStatusLink] = useState('')
   const [telegramSent, setTelegramSent] = useState<boolean | null>(null)
   const [telegramError, setTelegramError] = useState('')
+  const [telegramOpened, setTelegramOpened] = useState(readTelegramOpened)
 
   const telegramIdTrimmed = form.telegram_chat_id.trim()
-  const telegramConnected = telegramIdTrimmed.length > 0
-  const telegramIdValid = !telegramConnected || /^\d{5,15}$/.test(telegramIdTrimmed)
-  const canSubmit = form.full_name.trim().length > 0 && telegramConnected && telegramIdValid && termsAccepted
+  const telegramIdEntered = telegramIdTrimmed.length > 0
+  const telegramIdValid = !telegramIdEntered || /^\d{5,15}$/.test(telegramIdTrimmed)
+  const canSubmit =
+    telegramOpened && form.full_name.trim().length > 0 && telegramIdEntered && telegramIdValid && termsAccepted
+
+  const onTelegramLinkUsed = () => {
+    setTelegramOpened(true)
+    writeTelegramOpened()
+  }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,6 +76,8 @@ export default function SignupView() {
       setTelegramSent(created.telegram_sent)
       setTelegramError(created.telegram_error || '')
       setDone(true)
+      // this person is finished: a reload must not unlock the form for the next one
+      clearTelegramOpened()
     } catch (e) {
       setError(String(e))
     } finally {
@@ -77,6 +116,8 @@ export default function SignupView() {
               setStatusLink('')
               setTelegramSent(null)
               setTelegramError('')
+              setTelegramOpened(false)
+              clearTelegramOpened()
             }}
             className="text-sm text-blue-600 hover:underline"
           >
@@ -85,6 +126,41 @@ export default function SignupView() {
         </div>
       ) : (
         <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-800 p-4">
+          <div>
+            <p className="block text-xs text-neutral-500 mb-1">{t.form.telegramStep1}</p>
+            {/* onContextMenu: a long-press "open in new tab" never fires click */}
+            <a
+              href="https://t.me/MMR_PassportRenewalMonitoringBot?start=1"
+              target="_blank"
+              rel="noreferrer"
+              onClick={onTelegramLinkUsed}
+              onAuxClick={onTelegramLinkUsed}
+              onContextMenu={onTelegramLinkUsed}
+              className="block rounded bg-sky-500 px-3 py-2 text-center text-white text-sm hover:bg-sky-600"
+            >
+              {t.form.connectTelegram}
+            </a>
+            <label htmlFor="telegram-chat-id" className="block text-xs text-neutral-500 mb-1 mt-3">
+              {t.form.telegramStep2} {t.form.telegramIdLabel}{' '}
+              <span className="text-red-500">* {t.form.telegramRequired}</span>
+            </label>
+            <input
+              id="telegram-chat-id"
+              className="w-full rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:bg-neutral-100 dark:disabled:bg-neutral-800"
+              placeholder={telegramOpened ? t.form.telegramIdPlaceholder : t.form.telegramIdLockedPlaceholder}
+              value={form.telegram_chat_id}
+              onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })}
+              disabled={!telegramOpened}
+              required
+            />
+            {telegramIdEntered && !telegramIdValid && (
+              <p className="mt-1 text-xs text-red-600">{t.form.telegramInvalidFormat}</p>
+            )}
+            <p className="mt-1 text-xs text-neutral-500">
+              {t.form.telegramHelpPrefix} <strong>{t.form.telegramHelpStart}</strong> {t.form.telegramHelpSuffix}
+              <strong> {t.form.telegramHelpBold}</strong> {t.form.telegramHelpTail}
+            </p>
+          </div>
           <div>
             <label className="block text-xs text-neutral-500 mb-1">{t.form.fullName}</label>
             <input
@@ -103,35 +179,6 @@ export default function SignupView() {
               value={form.passport_no}
               onChange={(e) => setForm({ ...form, passport_no: e.target.value })}
             />
-          </div>
-          <div>
-            <label className="block text-xs text-neutral-500 mb-1">
-              {t.form.telegramIdLabel} <span className="text-red-500">* {t.form.telegramRequired}</span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2"
-                placeholder={t.form.telegramIdPlaceholder}
-                value={form.telegram_chat_id}
-                onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })}
-                required
-              />
-              <a
-                href="https://t.me/MMR_PassportRenewalMonitoringBot?start=1"
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 rounded bg-sky-500 px-3 py-2 text-white text-sm hover:bg-sky-600"
-              >
-                {t.form.connectTelegram}
-              </a>
-            </div>
-            {telegramConnected && !telegramIdValid && (
-              <p className="mt-1 text-xs text-red-600">{t.form.telegramInvalidFormat}</p>
-            )}
-            <p className="mt-1 text-xs text-neutral-500">
-              {t.form.telegramHelpPrefix} <strong>{t.form.telegramHelpStart}</strong> {t.form.telegramHelpSuffix}
-              <strong> {t.form.telegramHelpBold}</strong> {t.form.telegramHelpTail}
-            </p>
           </div>
           <div>
             <label className="block text-xs text-neutral-500 mb-1">{t.form.note}</label>
@@ -181,8 +228,10 @@ export default function SignupView() {
           </button>
           {!canSubmit && (
             <p className="text-xs text-neutral-500 text-center">
-              {!telegramConnected
+              {!telegramOpened
                 ? t.form.hintNoTelegram
+                : !telegramIdEntered
+                ? t.form.hintNoTelegramId
                 : !telegramIdValid
                 ? t.form.telegramInvalidFormat
                 : !termsAccepted

@@ -42,6 +42,11 @@ export interface EntrySearchResult extends Entry {
   fetched_at: string
 }
 
+export interface EntrySearchResponse {
+  results: EntrySearchResult[]
+  too_many: boolean
+}
+
 export interface Snapshot {
   id: number
   fetched_at: string
@@ -88,6 +93,14 @@ export interface PublicStats {
   total_users: number
 }
 
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getSessionToken()
   const res = await fetch(`${API_BASE}${path}`, {
@@ -100,7 +113,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(`${res.status} ${res.statusText}: ${text}`)
+    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text}`)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -129,7 +142,7 @@ export const api = {
   listSnapshots: () => request<Snapshot[]>('/api/snapshots'),
   snapshotEntries: (id: number, q = '') =>
     request<Entry[]>(`/api/snapshots/${id}/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
-  searchEntries: (q: string) => request<EntrySearchResult[]>(`/api/entries/search?q=${encodeURIComponent(q)}`),
+  searchEntries: (q: string) => request<EntrySearchResponse>(`/api/entries/search?q=${encodeURIComponent(q)}`),
   checkNow: () => request<{ status: string }>('/api/check-now', { method: 'POST' }),
 
   authStatus: () => request<AuthStatus>('/api/auth/status'),

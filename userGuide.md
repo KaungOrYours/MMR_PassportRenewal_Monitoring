@@ -12,10 +12,13 @@ full disclaimer.
 ## How to sign up
 
 1. Go to the website's home page.
-2. Tap **Connect Telegram**. This opens a chat with our Telegram bot.
+2. Tap **Connect Telegram**, the first step on the form. This opens a chat
+   with our Telegram bot. The **Your Telegram ID** field stays locked until
+   you have tapped this button.
 3. Tap **Start** in that chat. The bot replies instantly with your Telegram
    ID — tap it to copy.
-4. Paste that ID into the **Your Telegram ID** field on the signup form.
+4. Come back to the signup page and paste that ID into the **Your Telegram
+   ID** field.
 5. Enter your **full name exactly as it appears on your passport** (it will
    be saved and shown in capital letters, to match how it appears on
    official documents).
@@ -29,16 +32,24 @@ You cannot submit the form without connecting Telegram and agreeing to the
 Terms & Conditions — both are required so we can actually reach you and so
 you understand how your information is used before you submit it.
 
+If you sign up another person from the same device, tap **Add another
+person** and then **Connect Telegram** again. They need to do this from their
+own Telegram, because each person needs their own chat with the bot.
+
 After you submit, the bot sends you a one-time confirmation message on
 Telegram, and you'll see a **status link**. Bookmark that link — it's the
 only way to check your own status later without typing anything in again.
 
 ## If you already signed up before
 
-Just fill in the form again with the same name/passport/Telegram ID. We
-won't create a duplicate entry — we'll recognize you and show your existing
-status link instead. This is also how you can add a missing Telegram ID to
-an old entry, or correct a typo.
+Tap **Connect Telegram** to unlock the Telegram ID field, then fill in the
+form again with the same name/passport/Telegram ID. We won't create a
+duplicate entry — we'll recognize you and show your existing status link
+instead. This is also how you can add a missing Telegram ID or passport number
+to an old entry.
+
+Submitting again does not change details we already have. To correct a typo
+or a wrong Telegram ID, contact the project directly.
 
 ## Checking your status
 
@@ -73,10 +84,16 @@ masked everywhere on the public site.
 ## Frequently asked questions
 
 **I didn't get a Telegram message after signing up — what do I do?**
-Make sure you tapped **Start** in the chat with the bot before submitting
-the form, and that the Telegram ID you pasted matches exactly. If you're
-still not sure, submit the form again with the same details — it will
-recognize your existing entry and try again rather than creating a new one.
+Tapping **Connect Telegram** only opens the chat. Telegram can't deliver
+anything until you also tap **Start** in that chat, so make sure you did, then
+submit the form again with the same details — it will recognize your existing
+entry and try again rather than creating a new one.
+
+If the Telegram ID you entered was wrong, submitting again won't fix it,
+because an ID we already have is not replaced. Sending `/delete` from your
+correct account won't fix it either, because `/delete` only removes the entry
+stored under the account that sends it. Contact the project directly and we'll
+correct it.
 
 **I don't have my passport number yet — can I still sign up?**
 Yes, but matching is far more reliable with it. Add it later by signing up

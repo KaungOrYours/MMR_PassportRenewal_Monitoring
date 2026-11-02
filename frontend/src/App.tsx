@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import AuthGate from './auth/AuthGate'
 import { LanguageToggle, useLanguage } from './i18n/LanguageContext'
+import AdminListsView from './views/AdminListsView'
 import AlertsView from './views/AlertsView'
 import ListsView from './views/ListsView'
 import PublicAlertsView from './views/PublicAlertsView'
@@ -14,7 +15,7 @@ import WatchlistView from './views/WatchlistView'
 const ADMIN_TABS = [
   { id: 'watchlist', label: 'Watchlist', component: WatchlistView },
   { id: 'alerts', label: 'Alerts', component: AlertsView },
-  { id: 'lists', label: 'Lists', component: ListsView },
+  { id: 'lists', label: 'Lists', component: AdminListsView },
   { id: 'status', label: 'Status', component: StatusView },
 ] as const
 

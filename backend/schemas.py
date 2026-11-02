@@ -160,6 +160,12 @@ class EntrySearchResult(BaseModel):
     fetched_at: datetime
 
 
+class EntrySearchResponse(BaseModel):
+    results: list[EntrySearchResult]
+    # more rows matched than the cap: no rows are returned, the visitor must be more specific
+    too_many: bool = False
+
+
 class ExtractionIssueOut(BaseModel):
     id: int
     snapshot_id: int
