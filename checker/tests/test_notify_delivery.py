@@ -699,3 +699,72 @@ def test_shape_redaction_also_covers_non_latin_text():
     shaped = _shape("၀၇ မောင် THÉ 12")
     assert shaped.isascii()
     assert set(shaped) <= set("A9 ")
+
+
+def _failing_chat(monkeypatch):
+    monkeypatch.setattr(main, "send_message", lambda *a, **k: (_ for _ in ()).throw(
+        TelegramAPIError("Telegram API error (400): Bad Request: chat not found")))
+
+
+def _run_with_operator(monkeypatch, session, accept=True):
+    """Runs main.run() with both checks stubbed out; returns (exit_code, reports)."""
+    reports = []
+    monkeypatch.setattr(main.db, "get_session", lambda *a, **k: session)
+    monkeypatch.setattr(main, "run_embassy_pdf_check", lambda s: None)
+    monkeypatch.setattr(main, "run_telegram_renewal_check", lambda s: None)
+    monkeypatch.setattr(main, "_try_send", lambda text, label: reports.append(text) or accept)
+    return main.run(), reports
+
+
+def test_undeliverable_alert_is_reported_to_the_operator_once(session, monkeypatch):
+    snapshot = _seed(session)
+    _w, _e, record = _add_person(session, snapshot, "ZIN KYU HNIN", "MF591144", "MF59**44", "999999999")
+    session.commit()
+    _failing_chat(monkeypatch)
+
+    code, reports = _run_with_operator(monkeypatch, session)
+    assert code == 1
+    assert len(reports) == 1
+    assert record.failure_reported_at is not None
+    assert record.notified_at is None
+
+    # next run: still retried (and still failing), but not re-reported, not red
+    attempts = []
+    monkeypatch.setattr(main, "send_message", lambda *a, **k: attempts.append(1) or (_ for _ in ()).throw(
+        TelegramAPIError("Bad Request: chat not found")))
+    code, reports = _run_with_operator(monkeypatch, session)
+    assert attempts == [1]
+    assert code == 0
+    assert reports == []
+
+
+def test_failure_report_that_cannot_be_sent_is_retried(session, monkeypatch):
+    snapshot = _seed(session)
+    _w, _e, record = _add_person(session, snapshot, "ZIN KYU HNIN", "MF591144", "MF59**44", "999999999")
+    session.commit()
+    _failing_chat(monkeypatch)
+
+    code, reports = _run_with_operator(monkeypatch, session, accept=False)
+    assert code == 1
+    assert record.failure_reported_at is None
+
+    code, reports = _run_with_operator(monkeypatch, session, accept=True)
+    assert code == 1 and len(reports) == 1
+    assert record.failure_reported_at is not None
+
+
+def test_a_new_failure_is_reported_without_repeating_the_old_one(session, monkeypatch):
+    snapshot = _seed(session)
+    _w, _e, old = _add_person(session, snapshot, "ZIN KYU HNIN", "MF591144", "MF59**44", "999999999")
+    session.commit()
+    _failing_chat(monkeypatch)
+    _run_with_operator(monkeypatch, session)
+
+    _w2, _e2, new = _add_person(session, snapshot, "AYE THET WIN", "MG281173", "MG28**73", "888888888")
+    session.commit()
+    code, reports = _run_with_operator(monkeypatch, session)
+
+    assert code == 1
+    assert len(reports) == 1
+    assert "AYE THET WIN" in reports[0] and "ZIN KYU HNIN" not in reports[0]
+    assert new.failure_reported_at is not None

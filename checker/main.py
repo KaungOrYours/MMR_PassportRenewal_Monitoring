@@ -54,14 +54,17 @@ def _get_watchlist(session) -> tuple[list[db.Watchlist], list[WatchlistEntry]]:
     return rows, entries
 
 
-def _try_send(text: str, label: str) -> None:
+def _try_send(text: str, label: str) -> bool:
     """Operator-facing messages (heartbeat, integrity warning, failure report)
-    must never abort a run: they report on the job, they are not the job."""
+    must never abort a run: they report on the job, they are not the job.
+    Returns True only if Telegram accepted the message."""
     try:
         send_message(text)
+        return True
     except Exception as exc:
         # no traceback: a requests exception's message contains the bot token
         log.error("[notify] Could not send %s: %s", label, safe_error_text(exc))
+        return False
 
 
 def _try_send_document(file_path: str, caption: str = "") -> None:
@@ -147,7 +150,7 @@ def _match_view(record: "db.MatchRecord", entry: "db.Entry"):
     return SimpleNamespace(row=row, confidence=record.confidence, matched_on=record.matched_on)
 
 
-def deliver_pending_alerts(session) -> list[str]:
+def deliver_pending_alerts(session, unreported: list | None = None) -> list[str]:
     """Sends an alert for every recorded match not yet successfully delivered,
     stamping notified_at only once Telegram has accepted the message.
 
@@ -159,6 +162,12 @@ def deliver_pending_alerts(session) -> list[str]:
     alert was lost permanently rather than retried. Failures are now
     per-recipient, non-fatal, and retried on every subsequent run -- including
     runs where neither source published anything new.
+
+    The returned failures are only those the operator has not been told about
+    yet (MatchRecord.failure_reported_at IS NULL), so a permanently bad ID is
+    reported once rather than every run. Those records are appended to
+    ``unreported`` so the caller can stamp failure_reported_at once the report
+    has actually been accepted; the retry itself is unaffected.
     """
     pending = (
         session.query(db.MatchRecord, db.Entry, db.Watchlist)
@@ -201,7 +210,11 @@ def deliver_pending_alerts(session) -> list[str]:
             send_message(text, chat_id=watch.telegram_chat_id or None)
         except Exception as exc:
             reason = safe_error_text(exc)
-            failures.append(f"{watch.full_name}: {reason}")  # operator's private chat only
+            fresh = [record for record, _entry in items if record.failure_reported_at is None]
+            if fresh:
+                failures.append(f"{watch.full_name}: {reason}")  # operator's private chat only
+                if unreported is not None:
+                    unreported.extend(fresh)
             log.error("[notify] Alert to watchlist id %d failed, keeping it pending for the next run: %s",
                       watch.id, reason)
             continue
@@ -473,10 +486,17 @@ def run() -> int:
     # anything new, so an alert that failed to send on an earlier run still
     # gets retried instead of sitting in the DB marked as matched forever.
     try:
-        failures = deliver_pending_alerts(session)
+        unreported: list = []
+        failures = deliver_pending_alerts(session, unreported)
         if failures:
             exit_code = 1
-            _try_send(format_delivery_failures(failures), label="delivery failure report")
+            # stamp only once the operator was actually told; otherwise the
+            # report is retried next run
+            if _try_send(format_delivery_failures(failures), label="delivery failure report"):
+                now = datetime.now(timezone.utc)
+                for record in unreported:
+                    record.failure_reported_at = now
+                session.commit()
     except Exception as exc:
         exit_code = 1
         _report_stage_failure("[notify] Pending-alert delivery failed", exc)

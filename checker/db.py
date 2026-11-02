@@ -90,6 +90,9 @@ class MatchRecord(Base):
     matched_on = Column(String, nullable=False)
     score = Column(Integer, nullable=False)
     notified_at = Column(DateTime(timezone=True), nullable=True)
+    # When the operator was told this alert could not be delivered. Alerts are
+    # still retried every run; this only stops the same report repeating.
+    failure_reported_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -172,6 +175,7 @@ _ADDITIVE_COLUMNS = [
     ("watchlist", "lookup_token", "VARCHAR"),
     ("watchlist", "terms_accepted_at", "TIMESTAMPTZ"),
     ("matches", "notified_at", "TIMESTAMPTZ"),
+    ("matches", "failure_reported_at", "TIMESTAMPTZ"),
 ]
 
 
