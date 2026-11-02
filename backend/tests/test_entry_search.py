@@ -256,3 +256,13 @@ def test_expired_keys_are_swept_and_the_key_count_is_capped(monkeypatch):
     assert len(ratelimit._hits) <= 5
     ratelimit._hits.clear()
     ratelimit._windows.clear()
+
+
+@pytest.mark.parametrize("typed", ["ZZ123456", "zz 123 456"])
+def test_full_number_finds_a_renewal_list_row_and_shows_its_mask(client, session, typed):
+    add(session, "RENEWAL PERSON", "ZZ12**56", id_kind="masked_passport")
+
+    resp = search(client, typed)
+
+    assert [r["passport_no"] for r in rows(resp)] == ["ZZ12**56"]
+    assert "ZZ123456" not in resp.text

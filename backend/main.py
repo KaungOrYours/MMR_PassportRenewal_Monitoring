@@ -392,7 +392,12 @@ def search_entries(q: str = Query(min_length=SEARCH_MIN_CHARS, max_length=100), 
     if _FULL_PASSPORT_RE.match(compact):
         # stored full OR stored masked; the mask is shared by other people, which is
         # the price of the stored column no longer holding the full number
-        condition = models.Entry.passport_no.in_([compact, mask_identifier(compact)])
+        # The renewal list masks differently ("MG45**20": first two digits, two
+        # stars, last two), so that form is matched as well.
+        letters = compact.rstrip("0123456789")
+        digits = compact[len(letters):]
+        renewal_mask = f"{letters}{digits[:2]}**{digits[-2:]}"
+        condition = models.Entry.passport_no.in_([compact, mask_identifier(compact), renewal_mask])
     else:
         if len(compact) < SEARCH_MIN_NAME_CHARS:
             raise HTTPException(400, f"Type at least {SEARCH_MIN_NAME_CHARS} letters of the name.")
