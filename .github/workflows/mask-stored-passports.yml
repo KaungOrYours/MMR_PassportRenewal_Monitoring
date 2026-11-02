@@ -1,0 +1,29 @@
+# TEMPORARY. Manual, report-only run of checker/mask_stored_passports.py.
+# Prints counts only and changes nothing. Delete this file once the cleanup is done.
+# This repo is public, so the log is world-readable; the script prints no names.
+name: Mask stored passports (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r checker/requirements.txt
+
+      - name: Report what would change (no --apply)
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m checker.mask_stored_passports
